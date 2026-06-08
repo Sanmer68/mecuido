@@ -21,7 +21,7 @@ export default function PatientPage({ profile }) {
     reader.onload = async (e) => {
       const base64 = e.target.result.split(',')[1]
       try {
-        const res = await fetch('/api/claude', {
+        const res = await fetch('/.netlify/functions/claude-proxy', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
