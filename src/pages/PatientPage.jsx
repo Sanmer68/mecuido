@@ -48,6 +48,34 @@ Si no es comida responde: {"error":"No es comida"}` }
     }
     reader.readAsDataURL(file)
   }
+  async function analyzeText() {
+  setAnalyzing(true)
+  setResult(null)
+  try {
+    const res = await fetch('/api/claude', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1000,
+        messages: [{
+          role: 'user',
+          content: `Analiza esta descripción de comida y responde SOLO en JSON sin backticks así:
+{"descripcion":"nombre del platillo","calorias":380,"proteina_g":25,"carbos_g":40,"grasa_g":12,"sodio_mg":600,"colesterol_mg":80,"confianza":"alta|media|baja","nota":"observación breve"}
+
+Descripción: ${descripcionManual}`
+        }]
+      })
+    })
+    const data = await res.json()
+    const text = data.content[0].text
+    const parsed = JSON.parse(text)
+    setResult(parsed)
+  } catch (e) {
+    setResult({ error: 'Error al analizar' })
+  }
+  setAnalyzing(false)
+}
 
   async function saveLog() {
     if (!result || result.error) return
@@ -127,16 +155,27 @@ Si no es comida responde: {"error":"No es comida"}` }
             <input type="file" accept="image/*" capture="environment" ref={fileRef} style={{display:'none'}}
               onChange={e => { const f = e.target.files[0]; if(f){setPhoto(URL.createObjectURL(f)); analyzePhoto(f)} }}/>
 
-            {!photo && !analyzing && (
-              <div style={{background:'#111',border:'1px solid #222',borderRadius:12,padding:20,textAlign:'center'}}>
-                <p style={{fontSize:48,marginBottom:16}}>📸</p>
-                <p style={{color:'#666',marginBottom:16}}>Toma una foto de tu plato</p>
-                <button onClick={() => fileRef.current.click()}
-                  style={{width:'100%',padding:12,background:'#0F6E56',border:'none',borderRadius:8,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',marginBottom:8}}>
-                  Tomar foto
-                </button>
-              </div>
-            )}
+           {!photo && !analyzing && (
+  <div style={{background:'#111',border:'1px solid #222',borderRadius:12,padding:20}}>
+    <p style={{fontSize:32,textAlign:'center',marginBottom:12}}>📸</p>
+    <button onClick={() => fileRef.current.click()}
+      style={{width:'100%',padding:12,background:'#0F6E56',border:'none',borderRadius:8,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',marginBottom:12}}>
+      Tomar foto
+    </button>
+    <p style={{color:'#555',fontSize:12,textAlign:'center',marginBottom:12}}>— o describe tu comida —</p>
+    <textarea
+      placeholder="Ej: 100g carne de res, 120g papa cocida, ensalada de lechuga..."
+      value={descripcionManual}
+      onChange={e => setDescripcionManual(e.target.value)}
+      rows={3}
+      style={{width:'100%',padding:'10px 12px',background:'#1a1a1a',border:'1px solid #333',borderRadius:8,color:'#fff',fontSize:13,boxSizing:'border-box',resize:'none',marginBottom:8}}
+    />
+    <button onClick={analyzeText} disabled={!descripcionManual.trim()}
+      style={{width:'100%',padding:12,background: descripcionManual.trim() ? '#0F6E56' : '#333',border:'none',borderRadius:8,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer'}}>
+      Analizar descripción
+    </button>
+  </div>
+)}
 
             {analyzing && (
               <div style={{background:'#111',border:'1px solid #222',borderRadius:12,padding:40,textAlign:'center'}}>
