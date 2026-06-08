@@ -54,7 +54,7 @@ Si no es comida responde: {"error":"No es comida"}` }
     setAnalyzing(true)
     setResult(null)
     try {
-      const res = await fetch('/api/claude', {
+     const res = await fetch('/.netlify/functions/claude-proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
