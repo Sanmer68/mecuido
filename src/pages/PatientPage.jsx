@@ -20,6 +20,7 @@ export default function PatientPage({ profile }) {
     const reader = new FileReader()
     reader.onload = async (e) => {
       const base64 = e.target.result.split(',')[1]
+      setPhoto(e.target.result)
       try {
         const res = await fetch('/.netlify/functions/claude-proxy', {
           method: 'POST',
@@ -54,7 +55,7 @@ Si no es comida responde: {"error":"No es comida"}` }
     setAnalyzing(true)
     setResult(null)
     try {
-     const res = await fetch('/.netlify/functions/claude-proxy', {
+      const res = await fetch('/.netlify/functions/claude-proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -153,8 +154,8 @@ Descripción: ${descripcionManual}`
 
         {tab === 'registrar' && (
           <div>
-            <input type="file" accept="image/*" ref={fileRef} style={{display:'none'}}
-              onChange={e => { const f = e.target.files[0]; if(f){setPhoto(URL.createObjectURL(f)); analyzePhoto(f)} }}/>
+            <input type="file" accept="image/*" capture="environment" ref={fileRef} style={{display:'none'}}
+              onChange={e => { const f = e.target.files[0]; if(f){ analyzePhoto(f) } }}/>
 
             {!photo && !analyzing && (
               <div style={{background:'#111',border:'1px solid #222',borderRadius:12,padding:20}}>
@@ -180,6 +181,7 @@ Descripción: ${descripcionManual}`
 
             {analyzing && (
               <div style={{background:'#111',border:'1px solid #222',borderRadius:12,padding:40,textAlign:'center'}}>
+                {photo && <img src={photo} alt="plato" style={{width:'100%',borderRadius:8,marginBottom:16,maxHeight:200,objectFit:'cover'}}/>}
                 <p style={{fontSize:32,marginBottom:16}}>🤖</p>
                 <p style={{color:'#0F6E56'}}>Analizando tu comida...</p>
               </div>
