@@ -154,7 +154,7 @@ Descripción: ${descripcionManual}`
 
         {tab === 'registrar' && (
           <div>
-            <input type="file" accept="image/*" capture="environment" ref={fileRef} style={{display:'none'}}
+           <input type="file" accept="image/*" ref={fileRef} style={{display:'none'}}
               onChange={e => { const f = e.target.files[0]; if(f){ analyzePhoto(f) } }}/>
 
             {!photo && !analyzing && (
