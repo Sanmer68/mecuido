@@ -160,7 +160,7 @@ Descripción: ${descripcionManual}`
             {!photo && !analyzing && (
               <div style={{background:'#111',border:'1px solid #222',borderRadius:12,padding:20}}>
                 <p style={{fontSize:32,textAlign:'center',marginBottom:12}}>📸</p>
-                <button onClick={() => fileRef.current.click()}
+                <button onClick={() => { fileRef.current.value = ''; fileRef.current.click() }}
                   style={{width:'100%',padding:12,background:'#0F6E56',border:'none',borderRadius:8,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',marginBottom:12}}>
                   Tomar foto
                 </button>
