@@ -50,32 +50,42 @@ export default function RegisterPage() {
   }
 
   const inp = {
-    width: '100%', padding: '10px 12px', background: '#1a1a1a',
-    border: '1px solid #333', borderRadius: 8, color: '#fff',
-    marginBottom: 12, fontSize: 14, boxSizing: 'border-box'
+    width:'100%', padding:'12px 14px', background:'#F7F8FA',
+    border:'1px solid #E8E8E8', borderRadius:10, color:'#1a1a1a',
+    marginBottom:12, fontSize:14, boxSizing:'border-box',
+    fontFamily:'inherit', outline:'none'
   }
-  const sel = { ...inp }
+  const sel = { ...inp, cursor:'pointer' }
 
   return (
-    <div style={{minHeight:'100vh',background:'#0a0a0a',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'system-ui'}}>
-      <div style={{background:'#111',border:'1px solid #222',borderRadius:16,padding:32,width:340}}>
-        <h1 style={{color:'#fff',marginBottom:4,fontSize:22}}>MeCuido 🥗</h1>
-        <p style={{color:'#666',marginBottom:24,fontSize:13}}>
-          {step === 1 ? 'Crea tu cuenta' : step === 2 ? 'Tu perfil físico' : 'Tu objetivo'}
-        </p>
+    <div style={{minHeight:'100vh',background:'#F7F8FA',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',padding:20}}>
+      <div style={{background:'#fff',borderRadius:20,padding:32,width:'100%',maxWidth:360,boxShadow:'0 4px 24px rgba(0,0,0,0.08)'}}>
 
+        <div style={{textAlign:'center',marginBottom:24}}>
+          <div style={{width:56,height:56,background:'#0F6E56',borderRadius:16,display:'flex',alignItems:'center',justifyContent:'center',fontSize:28,margin:'0 auto 12px'}}>🥗</div>
+          <h1 style={{fontSize:22,fontWeight:800,margin:'0 0 4px',color:'#1a1a1a'}}>MeCuido</h1>
+          <p style={{color:'#888',fontSize:13,margin:0}}>
+            {step === 1 ? 'Crea tu cuenta' : step === 2 ? 'Tu perfil físico' : 'Tu objetivo'}
+          </p>
+        </div>
+
+        {/* Progress */}
         <div style={{display:'flex',gap:6,marginBottom:24}}>
           {[1,2,3].map(n => (
-            <div key={n} style={{flex:1,height:3,borderRadius:2,background: step >= n ? '#0F6E56' : '#333'}}/>
+            <div key={n} style={{flex:1,height:4,borderRadius:2,background: step >= n ? '#0F6E56' : '#E8E8E8',transition:'background 0.3s'}}/>
           ))}
         </div>
 
-        {error && <p style={{color:'#ef4444',marginBottom:16,fontSize:13}}>{error}</p>}
+        {error && (
+          <div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:10,padding:'10px 14px',marginBottom:16}}>
+            <p style={{color:'#DC2626',fontSize:13,margin:0}}>{error}</p>
+          </div>
+        )}
 
         {step === 1 && <>
           <input placeholder="Nombre completo" value={form.full_name}
             onChange={e => setForm({...form, full_name: e.target.value})} style={inp}/>
-          <input type="email" placeholder="Correo" value={form.email}
+          <input type="email" placeholder="Correo electrónico" value={form.email}
             onChange={e => setForm({...form, email: e.target.value})} style={inp}/>
           <input type="password" placeholder="Contraseña" value={form.password}
             onChange={e => setForm({...form, password: e.target.value})} style={inp}/>
@@ -84,13 +94,13 @@ export default function RegisterPage() {
             <option value="nutritionist">Soy nutriólogo/a</option>
           </select>
           <button onClick={() => setStep(form.role === 'nutritionist' ? 3 : 2)}
-            style={{width:'100%',padding:12,background:'#0F6E56',border:'none',borderRadius:8,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer'}}>
+            style={{width:'100%',padding:14,background:'#0F6E56',border:'none',borderRadius:10,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',marginTop:4}}>
             Continuar →
           </button>
         </>}
 
         {step === 2 && <>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
             <input placeholder="Peso (kg)" type="number" value={form.weight_kg}
               onChange={e => setForm({...form, weight_kg: e.target.value})}
               style={{...inp, marginBottom:0}}/>
@@ -98,57 +108,61 @@ export default function RegisterPage() {
               onChange={e => setForm({...form, height_cm: e.target.value})}
               style={{...inp, marginBottom:0}}/>
           </div>
-          <div style={{height:12}}/>
           <input placeholder="Edad" type="number" value={form.age}
             onChange={e => setForm({...form, age: e.target.value})} style={inp}/>
           <select value={form.sex} onChange={e => setForm({...form, sex: e.target.value})} style={sel}>
             <option value="female">Mujer</option>
             <option value="male">Hombre</option>
           </select>
-          <div style={{display:'flex',gap:8}}>
-            <button onClick={() => setStep(1)} style={{flex:1,padding:12,background:'transparent',border:'1px solid #333',borderRadius:8,color:'#fff',fontSize:14,cursor:'pointer'}}>
+          <div style={{display:'flex',gap:8,marginTop:4}}>
+            <button onClick={() => setStep(1)}
+              style={{flex:1,padding:13,background:'#F7F8FA',border:'1px solid #E8E8E8',borderRadius:10,color:'#555',fontSize:14,fontWeight:600,cursor:'pointer'}}>
               ← Atrás
             </button>
-            <button onClick={() => setStep(3)} style={{flex:1,padding:12,background:'#0F6E56',border:'none',borderRadius:8,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer'}}>
+            <button onClick={() => setStep(3)}
+              style={{flex:2,padding:13,background:'#0F6E56',border:'none',borderRadius:10,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer'}}>
               Continuar →
             </button>
           </div>
         </>}
 
         {step === 3 && <>
-          <p style={{color:'#aaa',fontSize:13,marginBottom:12}}>¿Qué tan activo/a eres?</p>
+          <p style={{color:'#555',fontSize:13,fontWeight:600,margin:'0 0 8px'}}>¿Qué tan activo/a eres?</p>
           <select value={form.activity_level} onChange={e => setForm({...form, activity_level: e.target.value})} style={sel}>
             <option value="sedentary">Sedentario (poco o nada de ejercicio)</option>
             <option value="moderate">Moderado (ejercicio 3-5 días/semana)</option>
             <option value="active">Activo (ejercicio 6-7 días/semana)</option>
             <option value="very_active">Muy activo (ejercicio intenso diario)</option>
           </select>
-          <p style={{color:'#aaa',fontSize:13,marginBottom:12}}>¿Cuál es tu objetivo?</p>
+          <p style={{color:'#555',fontSize:13,fontWeight:600,margin:'0 0 8px'}}>¿Cuál es tu objetivo?</p>
           <select value={form.goal} onChange={e => setForm({...form, goal: e.target.value})} style={sel}>
             <option value="lose">Bajar de peso</option>
             <option value="maintain">Mantener peso</option>
             <option value="gain">Subir masa muscular</option>
           </select>
+
           {form.role === 'patient' && form.weight_kg && form.height_cm && form.age && (
-            <div style={{background:'#0F6E5620',border:'1px solid #0F6E56',borderRadius:8,padding:12,marginBottom:12,textAlign:'center'}}>
-              <p style={{color:'#aaa',fontSize:12}}>Tu meta calórica diaria</p>
-              <p style={{color:'#0F6E56',fontSize:28,fontWeight:700}}>{calcCalories()} kcal</p>
+            <div style={{background:'#F0FAF6',border:'1px solid #C8EAE0',borderRadius:12,padding:16,marginBottom:14,textAlign:'center'}}>
+              <p style={{color:'#888',fontSize:12,margin:'0 0 4px'}}>Tu meta calórica diaria</p>
+              <p style={{color:'#0F6E56',fontSize:32,fontWeight:800,margin:0}}>{calcCalories()} <span style={{fontSize:14,fontWeight:500}}>kcal</span></p>
             </div>
           )}
+
           <div style={{display:'flex',gap:8}}>
             <button onClick={() => setStep(form.role === 'nutritionist' ? 1 : 2)}
-              style={{flex:1,padding:12,background:'transparent',border:'1px solid #333',borderRadius:8,color:'#fff',fontSize:14,cursor:'pointer'}}>
+              style={{flex:1,padding:13,background:'#F7F8FA',border:'1px solid #E8E8E8',borderRadius:10,color:'#555',fontSize:14,fontWeight:600,cursor:'pointer'}}>
               ← Atrás
             </button>
             <button onClick={handleRegister} disabled={loading}
-              style={{flex:1,padding:12,background:'#0F6E56',border:'none',borderRadius:8,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer'}}>
+              style={{flex:2,padding:13,background:'#0F6E56',border:'none',borderRadius:10,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer'}}>
               {loading ? 'Creando...' : 'Crear cuenta'}
             </button>
           </div>
         </>}
 
-        <p style={{color:'#666',fontSize:13,textAlign:'center',marginTop:16}}>
-          ¿Ya tienes cuenta? <a href="/login" style={{color:'#0F6E56'}}>Entra aquí</a>
+        <p style={{color:'#888',fontSize:13,textAlign:'center',marginTop:20,margin:'20px 0 0'}}>
+          ¿Ya tienes cuenta?{' '}
+          <a href="/login" style={{color:'#0F6E56',fontWeight:600,textDecoration:'none'}}>Entra aquí</a>
         </p>
       </div>
     </div>
