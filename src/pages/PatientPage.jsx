@@ -154,16 +154,16 @@ Descripción: ${descripcionManual}`
 
         {tab === 'registrar' && (
           <div>
-           <input type="file" accept="image/*" ref={fileRef} style={{display:'none'}}
-              onChange={e => { const f = e.target.files[0]; if(f){ analyzePhoto(f) } }}/>
+          <input type="file" accept="image/*" id="foto-input" ref={fileRef} style={{display:'none'}}
+  onChange={e => { const f = e.target.files[0]; if(f){ analyzePhoto(f) } }}/>
 
-            {!photo && !analyzing && (
-              <div style={{background:'#111',border:'1px solid #222',borderRadius:12,padding:20}}>
-                <p style={{fontSize:32,textAlign:'center',marginBottom:12}}>📸</p>
-                <button onClick={() => { fileRef.current.value = ''; fileRef.current.click() }}
-                  style={{width:'100%',padding:12,background:'#0F6E56',border:'none',borderRadius:8,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',marginBottom:12}}>
-                  Tomar foto
-                </button>
+{!photo && !analyzing && (
+  <div style={{background:'#111',border:'1px solid #222',borderRadius:12,padding:20}}>
+    <p style={{fontSize:32,textAlign:'center',marginBottom:12}}>📸</p>
+    <label htmlFor="foto-input"
+      style={{display:'block',width:'100%',padding:12,background:'#0F6E56',borderRadius:8,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer',marginBottom:12,textAlign:'center',boxSizing:'border-box'}}>
+      Tomar foto
+    </label>
                 <p style={{color:'#555',fontSize:12,textAlign:'center',marginBottom:12}}>— o describe tu comida —</p>
                 <textarea
                   placeholder="Ej: 100g carne de res, 120g papa cocida, ensalada..."
