@@ -1,5 +1,24 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+
+const SMAE_GROUPS = [
+  { key: 'verdura', label: 'Verdura', icon: '🥦' },
+  { key: 'fruta', label: 'Fruta', icon: '🍎' },
+  { key: 'cereal', label: 'Cereal', icon: '🌽' },
+  { key: 'leguminosa', label: 'Leguminosa', icon: '🥜' },
+  { key: 'aoa', label: 'AOA', icon: '🥩' },
+  { key: 'grasa', label: 'Grasa', icon: '🥑' },
+  { key: 'leche', label: 'Leche', icon: '🥛' },
+  { key: 'azucar', label: 'Azúcar', icon: '🍯' },
+]
+
+const MEAL_TIMES = [
+  { key: 'desayuno', label: 'Desayuno', icon: '☀️' },
+  { key: 'colacion_am', label: 'Colación AM', icon: '🍎' },
+  { key: 'comida', label: 'Comida', icon: '🍽️' },
+  { key: 'colacion_pm', label: 'Colación PM', icon: '🥜' },
+  { key: 'cena', label: 'Cena', icon: '🌙' },
+]
 
 export default function PatientPage({ profile }) {
   const [tab, setTab] = useState('inicio')
@@ -8,7 +27,29 @@ export default function PatientPage({ profile }) {
   const [photo, setPhoto] = useState(null)
   const [logs, setLogs] = useState([])
   const [descripcionManual, setDescripcionManual] = useState('')
+  const [planItems, setPlanItems] = useState([])
+  const [activePlanItem, setActivePlanItem] = useState(null)
   const fileRef = useRef()
+
+  useEffect(() => { loadPlan() }, [])
+
+  async function loadPlan() {
+    const { data: planData } = await supabase
+      .from('meal_plans')
+      .select('*')
+      .eq('patient_id', profile.id)
+      .eq('active', true)
+      .maybeSingle()
+
+    if (planData) {
+      const { data: items } = await supabase
+        .from('meal_plan_items')
+        .select('*')
+        .eq('meal_plan_id', planData.id)
+        .order('sort_order')
+      setPlanItems(items || [])
+    }
+  }
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -32,18 +73,16 @@ export default function PatientPage({ profile }) {
               role: 'user',
               content: [
                 { type: 'image', source: { type: 'base64', media_type: file.type, data: base64 } },
-                { type: 'text', text: `Eres un nutriólogo experto. Analiza esta foto de comida con mucha precisión.
-Cuenta las porciones visibles, estima el tamaño de cada una, e identifica todos los ingredientes.
-Responde SOLO en JSON sin backticks ni texto adicional:
-{"descripcion":"nombre exacto del platillo con cantidad estimada","calorias":380,"proteina_g":25,"carbos_g":40,"grasa_g":12,"sodio_mg":600,"colesterol_mg":80,"confianza":"alta|media|baja","nota":"observación sobre tamaño de porción"}
-Si no es comida responde: {"error":"No es comida"}` }
+                { type: 'text', text: `Eres un nutriólogo experto. Analiza esta foto de comida con mucha precisión. Cuenta las porciones visibles, estima el tamaño de cada una, e identifica todos los ingredientes.
+Responde SOLO en JSON sin backticks:
+{"descripcion":"nombre exacto con cantidad estimada","calorias":380,"proteina_g":25,"carbos_g":40,"grasa_g":12,"sodio_mg":600,"colesterol_mg":80,"confianza":"alta|media|baja","nota":"observación sobre porción"}
+Si no es comida: {"error":"No es comida"}` }
               ]
             }]
           })
         })
         const data = await res.json()
-        const text = data.content[0].text
-        const parsed = JSON.parse(text)
+        const parsed = JSON.parse(data.content[0].text)
         setResult(parsed)
       } catch (e) {
         setResult({ error: 'Error al analizar la imagen' })
@@ -66,16 +105,15 @@ Si no es comida responde: {"error":"No es comida"}` }
           messages: [{
             role: 'user',
             content: `Eres un nutriólogo experto. Analiza esta descripción de comida con precisión y estima los valores nutricionales reales para las cantidades mencionadas.
-Responde SOLO en JSON sin backticks ni texto adicional:
-{"descripcion":"nombre del platillo con cantidad","calorias":380,"proteina_g":25,"carbos_g":40,"grasa_g":12,"sodio_mg":600,"colesterol_mg":80,"confianza":"alta|media|baja","nota":"observación breve"}
+Responde SOLO en JSON sin backticks:
+{"descripcion":"nombre con cantidad","calorias":380,"proteina_g":25,"carbos_g":40,"grasa_g":12,"sodio_mg":600,"colesterol_mg":80,"confianza":"alta|media|baja","nota":"observación breve"}
 
 Descripción: ${descripcionManual}`
           }]
         })
       })
       const data = await res.json()
-      const text = data.content[0].text
-      const parsed = JSON.parse(text)
+      const parsed = JSON.parse(data.content[0].text)
       setResult(parsed)
     } catch (e) {
       setResult({ error: 'Error al analizar' })
@@ -110,63 +148,60 @@ Descripción: ${descripcionManual}`
   const nombre = profile?.full_name?.split(' ')[0] || 'tú'
 
   return (
-    <div style={{minHeight:'100vh',background:'#F7F8FA',fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',color:'#1a1a1a'}}>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
 
       {/* Header */}
-      <div style={{background:'#fff',borderBottom:'1px solid #EBEBEB',padding:'14px 20px',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,zIndex:10}}>
-        <div style={{display:'flex',alignItems:'center',gap:10}}>
-          <div style={{width:36,height:36,background:'#0F6E56',borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>🥗</div>
+      <div className="bg-white border-b border-gray-100 px-4 py-3 flex justify-between items-center sticky top-0 z-10">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 bg-emerald-700 rounded-xl flex items-center justify-center text-lg">🥗</div>
           <div>
-            <p style={{fontSize:15,fontWeight:700,margin:0}}>MeCuido</p>
-            <p style={{fontSize:11,color:'#888',margin:0}}>Hola, {nombre}</p>
+            <p className="text-sm font-bold text-gray-900">MeCuido</p>
+            <p className="text-xs text-gray-400">Hola, {nombre}</p>
           </div>
         </div>
-        <button onClick={handleLogout} style={{background:'transparent',border:'1px solid #E0E0E0',borderRadius:8,color:'#888',padding:'6px 14px',cursor:'pointer',fontSize:13,fontWeight:500}}>
+        <button onClick={handleLogout} className="text-xs text-gray-400 border border-gray-200 rounded-lg px-3 py-1.5">
           Salir
         </button>
       </div>
 
-      <div style={{maxWidth:480,margin:'0 auto',padding:'20px 16px 100px'}}>
+      <div className="flex-1 max-w-lg mx-auto w-full px-4 pt-5 pb-24">
 
-        {/* Tab Inicio */}
+        {/* INICIO */}
         {tab === 'inicio' && (
-          <div>
-            {/* Calorias card */}
-            <div style={{background:'#fff',borderRadius:16,padding:20,marginBottom:16,boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}}>
-              <p style={{color:'#888',fontSize:12,fontWeight:600,letterSpacing:'0.05em',textTransform:'uppercase',margin:'0 0 4px'}}>Calorías de hoy</p>
-              <div style={{display:'flex',alignItems:'baseline',gap:6,marginBottom:12}}>
-                <span style={{fontSize:40,fontWeight:800,color:'#0F6E56',lineHeight:1}}>{totalCals}</span>
-                <span style={{fontSize:15,color:'#aaa'}}>/ {meta} kcal</span>
+          <div className="flex flex-col gap-4">
+            <div className="bg-white rounded-2xl p-5 shadow-sm">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Calorías de hoy</p>
+              <div className="flex items-baseline gap-2 mb-3">
+                <span className="text-4xl font-extrabold text-emerald-700">{totalCals}</span>
+                <span className="text-sm text-gray-400">/ {meta} kcal</span>
               </div>
-              <div style={{height:6,background:'#F0F0F0',borderRadius:3}}>
-                <div style={{height:'100%',background: pct > 90 ? '#ef4444' : '#0F6E56',borderRadius:3,width:`${pct}%`,transition:'width 0.4s ease'}}/>
+              <div className="h-2 bg-gray-100 rounded-full">
+                <div className={`h-full rounded-full transition-all ${pct > 90 ? 'bg-red-500' : 'bg-emerald-600'}`} style={{width:`${pct}%`}}/>
               </div>
-              <p style={{fontSize:12,color:'#aaa',marginTop:6,textAlign:'right'}}>{pct}% de tu meta</p>
+              <p className="text-xs text-gray-400 mt-2 text-right">{pct}% de tu meta</p>
             </div>
 
-            {/* Macros */}
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:16}}>
+            <div className="grid grid-cols-3 gap-3">
               {[
-                {label:'Proteína', val: logs.reduce((s,l)=>s+(l.proteina_g||0),0), meta:'62g', color:'#3B82F6'},
-                {label:'Carbos', val: logs.reduce((s,l)=>s+(l.carbos_g||0),0), meta:'220g', color:'#F59E0B'},
-                {label:'Grasa', val: logs.reduce((s,l)=>s+(l.grasa_g||0),0), meta:'60g', color:'#EF4444'},
+                {label:'Proteína', val:logs.reduce((s,l)=>s+(l.proteina_g||0),0), meta:'62g', color:'text-blue-500'},
+                {label:'Carbos', val:logs.reduce((s,l)=>s+(l.carbos_g||0),0), meta:'220g', color:'text-amber-500'},
+                {label:'Grasa', val:logs.reduce((s,l)=>s+(l.grasa_g||0),0), meta:'60g', color:'text-red-500'},
               ].map(m => (
-                <div key={m.label} style={{background:'#fff',borderRadius:14,padding:'14px 12px',textAlign:'center',boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}}>
-                  <p style={{fontSize:22,fontWeight:800,color:m.color,margin:'0 0 2px'}}>{m.val}<span style={{fontSize:12,fontWeight:600}}>g</span></p>
-                  <p style={{fontSize:11,color:'#888',margin:'0 0 2px',fontWeight:600}}>{m.label}</p>
-                  <p style={{fontSize:10,color:'#ccc',margin:0}}>meta {m.meta}</p>
+                <div key={m.label} className="bg-white rounded-2xl p-3 text-center shadow-sm">
+                  <p className={`text-xl font-extrabold ${m.color}`}>{m.val}<span className="text-xs">g</span></p>
+                  <p className="text-xs text-gray-500 font-semibold">{m.label}</p>
+                  <p className="text-xs text-gray-300">meta {m.meta}</p>
                 </div>
               ))}
             </div>
 
-            {/* CTA registrar */}
             {logs.length === 0 && (
-              <div style={{background:'#F0FAF6',border:'1px solid #C8EAE0',borderRadius:14,padding:20,textAlign:'center'}}>
-                <p style={{fontSize:28,margin:'0 0 8px'}}>🍽️</p>
-                <p style={{fontWeight:600,color:'#0F6E56',margin:'0 0 4px'}}>Registra tu primera comida</p>
-                <p style={{fontSize:13,color:'#888',margin:'0 0 14px'}}>Toma una foto o describe lo que comiste</p>
+              <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-6 text-center">
+                <p className="text-3xl mb-2">🍽️</p>
+                <p className="font-bold text-emerald-700 mb-1">Registra tu primera comida</p>
+                <p className="text-sm text-gray-500 mb-4">Toma una foto o describe lo que comiste</p>
                 <button onClick={() => setTab('registrar')}
-                  style={{padding:'10px 24px',background:'#0F6E56',border:'none',borderRadius:8,color:'#fff',fontSize:14,fontWeight:600,cursor:'pointer'}}>
+                  className="px-6 py-2.5 bg-emerald-700 text-white font-bold rounded-xl text-sm">
                   Registrar ahora
                 </button>
               </div>
@@ -174,76 +209,138 @@ Descripción: ${descripcionManual}`
           </div>
         )}
 
-        {/* Tab Registrar */}
+        {/* MI PLAN */}
+        {tab === 'plan' && (
+          <div className="flex flex-col gap-3">
+            <h2 className="text-lg font-bold text-gray-900">Mi plan de hoy</h2>
+
+            {planItems.length === 0 ? (
+              <div className="bg-white rounded-2xl p-10 text-center shadow-sm">
+                <p className="text-3xl mb-2">📋</p>
+                <p className="font-bold text-gray-400">Sin plan asignado</p>
+                <p className="text-sm text-gray-300 mt-1">Tu nutriólogo aún no ha creado tu plan</p>
+              </div>
+            ) : (
+              planItems.map(item => {
+                const mt = MEAL_TIMES.find(m => m.key === item.meal_time)
+                const isOpen = activePlanItem === item.id
+                const groups = SMAE_GROUPS.filter(g => parseFloat(item[g.key]) > 0)
+                return (
+                  <div key={item.id} className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                    <button
+                      onClick={() => setActivePlanItem(isOpen ? null : item.id)}
+                      className="w-full flex justify-between items-center px-4 py-4 text-left">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">{mt?.icon}</span>
+                        <div>
+                          <p className="font-bold text-gray-900">{item.meal_time_label}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {groups.map(g => `${item[g.key]} ${g.label}`).join(' · ')}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-gray-300">{isOpen ? '▲' : '▼'}</span>
+                    </button>
+
+                    {isOpen && (
+                      <div className="px-4 pb-4 border-t border-gray-50 pt-3">
+                        {/* Equivalentes */}
+                        <div className="grid grid-cols-4 gap-2 mb-4">
+                          {groups.map(g => (
+                            <div key={g.key} className="bg-gray-50 rounded-xl p-2 text-center">
+                              <p className="text-xl">{g.icon}</p>
+                              <p className="text-base font-extrabold text-emerald-700">{item[g.key]}</p>
+                              <p className="text-xs text-gray-400">{g.label}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Receta */}
+                        {item.recipe_text && (
+                          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                            <p className="text-xs font-bold text-emerald-700 uppercase tracking-widest mb-1">Receta sugerida</p>
+                            <p className="text-sm text-gray-700 leading-relaxed">{item.recipe_text}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        )}
+
+        {/* REGISTRAR */}
         {tab === 'registrar' && (
-          <div>
-            <input type="file" accept="image/*" id="foto-input" ref={fileRef} style={{display:'none'}}
+          <div className="flex flex-col gap-4">
+            <input type="file" accept="image/*" id="foto-input" ref={fileRef} className="hidden"
               onChange={e => { const f = e.target.files[0]; if(f){ analyzePhoto(f) } }}/>
 
             {!photo && !analyzing && (
-              <div>
-                <div style={{background:'#fff',borderRadius:16,padding:20,marginBottom:12,boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}}>
-                  <label htmlFor="foto-input" style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,width:'100%',padding:14,background:'#0F6E56',borderRadius:10,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',boxSizing:'border-box'}}>
-                    <span style={{fontSize:20}}>📸</span> Tomar foto
+              <>
+                <div className="bg-white rounded-2xl p-4 shadow-sm">
+                  <label htmlFor="foto-input" className="flex items-center justify-center gap-3 w-full py-4 bg-emerald-700 rounded-xl text-white font-bold text-base cursor-pointer">
+                    <span className="text-xl">📸</span> Tomar foto
                   </label>
                 </div>
-
-                <div style={{background:'#fff',borderRadius:16,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}}>
-                  <p style={{fontSize:13,color:'#888',fontWeight:600,margin:'0 0 10px',textTransform:'uppercase',letterSpacing:'0.05em'}}>O describe tu comida</p>
+                <div className="bg-white rounded-2xl p-4 shadow-sm">
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">O describe tu comida</p>
                   <textarea
                     placeholder="Ej: 2 tacos de pastor con tortilla de maíz, cebolla y cilantro"
                     value={descripcionManual}
                     onChange={e => setDescripcionManual(e.target.value)}
                     rows={3}
-                    style={{width:'100%',padding:'10px 12px',background:'#F7F8FA',border:'1px solid #E8E8E8',borderRadius:10,color:'#1a1a1a',fontSize:14,boxSizing:'border-box',resize:'none',outline:'none',fontFamily:'inherit'}}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 text-sm outline-none resize-none focus:border-emerald-500"
                   />
                   <button onClick={analyzeText} disabled={!descripcionManual.trim()}
-                    style={{width:'100%',marginTop:10,padding:13,background:descripcionManual.trim()?'#0F6E56':'#E0E0E0',border:'none',borderRadius:10,color:descripcionManual.trim()?'#fff':'#aaa',fontSize:14,fontWeight:700,cursor:descripcionManual.trim()?'pointer':'default',transition:'background 0.2s'}}>
+                    className={`w-full mt-3 py-3 rounded-xl font-bold text-sm transition ${descripcionManual.trim() ? 'bg-emerald-700 text-white' : 'bg-gray-100 text-gray-400'}`}>
                     Analizar
                   </button>
                 </div>
-              </div>
+              </>
             )}
 
             {analyzing && (
-              <div style={{background:'#fff',borderRadius:16,overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}}>
-                {photo && <img src={photo} alt="plato" style={{width:'100%',maxHeight:220,objectFit:'cover'}}/>}
-                <div style={{padding:30,textAlign:'center'}}>
-                  <div style={{width:48,height:48,border:'3px solid #0F6E56',borderTopColor:'transparent',borderRadius:'50%',margin:'0 auto 16px',animation:'spin 0.8s linear infinite'}}/>
-                  <p style={{fontWeight:600,color:'#0F6E56',margin:0}}>Analizando tu comida...</p>
-                  <p style={{fontSize:13,color:'#aaa',margin:'4px 0 0'}}>Esto toma unos segundos</p>
+              <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
+                {photo && <img src={photo} alt="plato" className="w-full max-h-52 object-cover"/>}
+                <div className="p-8 text-center">
+                  <div className="w-10 h-10 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" style={{borderWidth:3,borderStyle:'solid'}}/>
+                  <p className="font-bold text-emerald-700">Analizando tu comida...</p>
+                  <p className="text-sm text-gray-400 mt-1">Esto toma unos segundos</p>
                 </div>
-                <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
               </div>
             )}
 
-            {photo && result && !result.error && (
-              <div style={{background:'#fff',borderRadius:16,overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}}>
-                <img src={photo} alt="plato" style={{width:'100%',maxHeight:220,objectFit:'cover'}}/>
-                <div style={{padding:20}}>
-                  <p style={{fontSize:11,color:'#0F6E56',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.05em',margin:'0 0 4px'}}>IA detectó</p>
-                  <p style={{fontSize:17,fontWeight:700,margin:'0 0 14px'}}>{result.descripcion}</p>
-                  <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14}}>
+            {result && !result.error && (
+              <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
+                {photo && <img src={photo} alt="plato" className="w-full max-h-52 object-cover"/>}
+                <div className="p-4">
+                  <p className="text-xs font-bold text-emerald-700 uppercase tracking-widest mb-1">
+                    {photo ? 'IA detectó' : 'IA calculó'}
+                  </p>
+                  <p className="text-lg font-bold text-gray-900 mb-4">{result.descripcion}</p>
+                  <div className="grid grid-cols-4 gap-2 mb-4">
                     {[
-                      {label:'Calorías',val:result.calorias,unit:'kcal',color:'#0F6E56'},
-                      {label:'Proteína',val:result.proteina_g,unit:'g',color:'#3B82F6'},
-                      {label:'Carbos',val:result.carbos_g,unit:'g',color:'#F59E0B'},
-                      {label:'Grasa',val:result.grasa_g,unit:'g',color:'#EF4444'},
+                      {label:'Calorías', val:result.calorias, unit:'kcal', color:'text-emerald-700'},
+                      {label:'Proteína', val:result.proteina_g, unit:'g', color:'text-blue-500'},
+                      {label:'Carbos', val:result.carbos_g, unit:'g', color:'text-amber-500'},
+                      {label:'Grasa', val:result.grasa_g, unit:'g', color:'text-red-500'},
                     ].map(n => (
-                      <div key={n.label} style={{background:'#F7F8FA',borderRadius:10,padding:'10px 6px',textAlign:'center'}}>
-                        <p style={{fontSize:16,fontWeight:800,color:n.color,margin:'0 0 2px'}}>{n.val}<span style={{fontSize:10}}>{n.unit}</span></p>
-                        <p style={{fontSize:10,color:'#888',margin:0}}>{n.label}</p>
+                      <div key={n.label} className="bg-gray-50 rounded-xl p-2 text-center">
+                        <p className={`text-base font-extrabold ${n.color}`}>{n.val}<span className="text-xs">{n.unit}</span></p>
+                        <p className="text-xs text-gray-400">{n.label}</p>
                       </div>
                     ))}
                   </div>
-                  <p style={{fontSize:11,color:'#aaa',margin:'0 0 14px'}}>Variación estimada 15-25% · Confianza: {result.confianza}</p>
-                  <div style={{display:'flex',gap:8}}>
+                  <p className="text-xs text-gray-400 mb-4">Variación estimada 15-25% · Confianza: {result.confianza}</p>
+                  <div className="flex gap-3">
                     <button onClick={() => {setPhoto(null);setResult(null)}}
-                      style={{flex:1,padding:12,background:'#F7F8FA',border:'1px solid #E8E8E8',borderRadius:10,color:'#555',fontSize:14,fontWeight:600,cursor:'pointer'}}>
+                      className="flex-1 py-3 bg-gray-100 text-gray-600 font-semibold rounded-xl text-sm">
                       Ajustar
                     </button>
                     <button onClick={saveLog}
-                      style={{flex:2,padding:12,background:'#0F6E56',border:'none',borderRadius:10,color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer'}}>
+                      className="flex-[2] py-3 bg-emerald-700 text-white font-bold rounded-xl text-sm">
                       Confirmar ✓
                     </button>
                   </div>
@@ -251,42 +348,12 @@ Descripción: ${descripcionManual}`
               </div>
             )}
 
-            {!photo && result && !result.error && (
-              <div style={{background:'#fff',borderRadius:16,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}}>
-                <p style={{fontSize:11,color:'#0F6E56',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.05em',margin:'0 0 4px'}}>IA calculó</p>
-                <p style={{fontSize:17,fontWeight:700,margin:'0 0 14px'}}>{result.descripcion}</p>
-                <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14}}>
-                  {[
-                    {label:'Calorías',val:result.calorias,unit:'kcal',color:'#0F6E56'},
-                    {label:'Proteína',val:result.proteina_g,unit:'g',color:'#3B82F6'},
-                    {label:'Carbos',val:result.carbos_g,unit:'g',color:'#F59E0B'},
-                    {label:'Grasa',val:result.grasa_g,unit:'g',color:'#EF4444'},
-                  ].map(n => (
-                    <div key={n.label} style={{background:'#F7F8FA',borderRadius:10,padding:'10px 6px',textAlign:'center'}}>
-                      <p style={{fontSize:16,fontWeight:800,color:n.color,margin:'0 0 2px'}}>{n.val}<span style={{fontSize:10}}>{n.unit}</span></p>
-                      <p style={{fontSize:10,color:'#888',margin:0}}>{n.label}</p>
-                    </div>
-                  ))}
-                </div>
-                <div style={{display:'flex',gap:8}}>
-                  <button onClick={() => setResult(null)}
-                    style={{flex:1,padding:12,background:'#F7F8FA',border:'1px solid #E8E8E8',borderRadius:10,color:'#555',fontSize:14,fontWeight:600,cursor:'pointer'}}>
-                    Ajustar
-                  </button>
-                  <button onClick={saveLog}
-                    style={{flex:2,padding:12,background:'#0F6E56',border:'none',borderRadius:10,color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer'}}>
-                    Confirmar ✓
-                  </button>
-                </div>
-              </div>
-            )}
-
             {result?.error && (
-              <div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:14,padding:20,textAlign:'center'}}>
-                <p style={{fontSize:24,margin:'0 0 8px'}}>⚠️</p>
-                <p style={{color:'#DC2626',fontWeight:600,margin:'0 0 12px'}}>{result.error}</p>
+              <div className="bg-red-50 border border-red-100 rounded-2xl p-6 text-center">
+                <p className="text-2xl mb-2">⚠️</p>
+                <p className="text-red-600 font-bold mb-3">{result.error}</p>
                 <button onClick={() => {setPhoto(null);setResult(null)}}
-                  style={{padding:'8px 20px',background:'#fff',border:'1px solid #E8E8E8',borderRadius:8,color:'#555',fontSize:13,cursor:'pointer'}}>
+                  className="px-5 py-2 bg-white border border-gray-200 rounded-xl text-gray-600 text-sm">
                   Intentar de nuevo
                 </button>
               </div>
@@ -294,24 +361,24 @@ Descripción: ${descripcionManual}`
           </div>
         )}
 
-        {/* Tab Historial */}
+        {/* HISTORIAL */}
         {tab === 'historial' && (
-          <div>
+          <div className="flex flex-col gap-3">
             {logs.length === 0 ? (
-              <div style={{background:'#fff',borderRadius:16,padding:40,textAlign:'center',boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}}>
-                <p style={{fontSize:32,margin:'0 0 8px'}}>📋</p>
-                <p style={{fontWeight:600,color:'#888',margin:0}}>Sin registros todavía</p>
-                <p style={{fontSize:13,color:'#aaa',marginTop:4}}>Tus comidas de hoy aparecerán aquí</p>
+              <div className="bg-white rounded-2xl p-10 text-center shadow-sm">
+                <p className="text-3xl mb-2">📋</p>
+                <p className="font-bold text-gray-400">Sin registros todavía</p>
+                <p className="text-sm text-gray-300 mt-1">Tus comidas de hoy aparecerán aquí</p>
               </div>
             ) : logs.map((log, i) => (
-              <div key={i} style={{background:'#fff',borderRadius:14,padding:14,marginBottom:10,boxShadow:'0 1px 4px rgba(0,0,0,0.06)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div key={i} className="bg-white rounded-2xl p-4 shadow-sm flex justify-between items-center">
                 <div>
-                  <p style={{fontWeight:600,margin:'0 0 3px',fontSize:14}}>{log.descripcion}</p>
-                  <p style={{color:'#aaa',fontSize:12,margin:0}}>{log.proteina_g}g prot · {log.carbos_g}g carbos · {log.grasa_g}g grasa</p>
+                  <p className="font-semibold text-gray-900 text-sm">{log.descripcion}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{log.proteina_g}g prot · {log.carbos_g}g carbos · {log.grasa_g}g grasa</p>
                 </div>
-                <div style={{textAlign:'right'}}>
-                  <p style={{color:'#0F6E56',fontWeight:800,fontSize:16,margin:0}}>{log.calorias}</p>
-                  <p style={{color:'#aaa',fontSize:10,margin:0}}>kcal</p>
+                <div className="text-right">
+                  <p className="text-lg font-extrabold text-emerald-700">{log.calorias}</p>
+                  <p className="text-xs text-gray-400">kcal</p>
                 </div>
               </div>
             ))}
@@ -320,20 +387,22 @@ Descripción: ${descripcionManual}`
       </div>
 
       {/* Bottom nav */}
-      <div style={{position:'fixed',bottom:0,left:0,right:0,background:'#fff',borderTop:'1px solid #EBEBEB',display:'flex',padding:'8px 0 20px'}}>
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex pb-5 pt-2 z-10">
         {[
           {id:'inicio', icon:'🏠', label:'Inicio'},
+          {id:'plan', icon:'📋', label:'Mi Plan'},
           {id:'registrar', icon:'📸', label:'Registrar'},
           {id:'historial', icon:'📊', label:'Historial'},
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            style={{flex:1,background:'transparent',border:'none',cursor:'pointer',padding:'6px 0',display:'flex',flexDirection:'column',alignItems:'center',gap:3}}>
-            <span style={{fontSize:20}}>{t.icon}</span>
-            <span style={{fontSize:11,fontWeight: tab===t.id ? 700 : 400, color: tab===t.id ? '#0F6E56' : '#aaa'}}>{t.label}</span>
+            className="flex-1 flex flex-col items-center gap-1 bg-transparent border-none cursor-pointer py-1">
+            <span className="text-xl">{t.icon}</span>
+            <span className={`text-xs ${tab===t.id ? 'font-bold text-emerald-700' : 'font-medium text-gray-400'}`}>
+              {t.label}
+            </span>
           </button>
         ))}
       </div>
-
     </div>
   )
 }
