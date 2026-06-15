@@ -15,19 +15,6 @@ export default function LoginPage() {
     setLoading(false)
   }
 
-  const inp = {
-    width:'100%', padding:'11px 14px', background:'rgba(255,255,255,0.12)',
-    border:'1px solid rgba(255,255,255,0.25)', borderRadius:10, color:'#fff',
-    marginBottom:10, fontSize:14, boxSizing:'border-box',
-    fontFamily:'inherit', outline:'none'
-  }
-
-  const features = [
-    { icon:'📸', text:'Foto → calorías al instante' },
-    { icon:'🎯', text:'Meta calórica personalizada' },
-    { icon:'🤖', text:'IA nutricional en segundos' },
-  ]
-
   const tips = [
     '"Lo que no se mide, no mejora."',
     '"Un pequeño cambio diario = gran resultado."',
@@ -36,60 +23,74 @@ export default function LoginPage() {
   const tip = tips[new Date().getDay() % tips.length]
 
   return (
-    <div style={{minHeight:'100vh',fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',display:'flex',flexDirection:'column'}}>
+    <div className="min-h-screen flex flex-col bg-gray-50">
 
-      {/* Hero verde */}
-      <div style={{background:'linear-gradient(160deg,#0a4a38 0%,#0F6E56 60%,#1a8a6a 100%)',padding:'40px 24px 60px',textAlign:'center',position:'relative'}}>
-        <div style={{width:52,height:52,background:'rgba(255,255,255,0.15)',borderRadius:16,display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,margin:'0 auto 12px',backdropFilter:'blur(10px)'}}>🥗</div>
-        <h1 style={{fontSize:28,fontWeight:800,color:'#fff',margin:'0 0 6px',letterSpacing:'-0.5px'}}>MeCuido</h1>
-        <p style={{color:'rgba(255,255,255,0.75)',fontSize:14,margin:'0 0 24px'}}>Nutrición inteligente con IA</p>
+      {/* Hero */}
+      <div className="bg-gradient-to-br from-emerald-900 via-emerald-700 to-emerald-600 px-6 pt-14 pb-16 text-center">
+        <div className="w-16 h-16 bg-white/20 backdrop-blur rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4 shadow-lg">
+          🥗
+        </div>
+        <h1 className="text-3xl font-extrabold text-white tracking-tight mb-1">MeCuido</h1>
+        <p className="text-emerald-100 text-sm mb-8">Nutrición inteligente con IA</p>
 
-        {/* Features inline */}
-        <div style={{display:'flex',flexDirection:'column',gap:8,maxWidth:300,margin:'0 auto'}}>
-          {features.map(f => (
-            <div key={f.text} style={{display:'flex',alignItems:'center',gap:10,background:'rgba(255,255,255,0.1)',borderRadius:10,padding:'8px 14px',backdropFilter:'blur(10px)'}}>
-              <span style={{fontSize:16}}>{f.icon}</span>
-              <span style={{fontSize:13,color:'rgba(255,255,255,0.9)',fontWeight:500}}>{f.text}</span>
+        <div className="flex flex-col gap-2 max-w-xs mx-auto">
+          {[
+            { icon: '📸', text: 'Foto → calorías al instante' },
+            { icon: '🎯', text: 'Plan personalizado por tu nutriólogo' },
+            { icon: '🤖', text: 'IA nutricional con equivalentes SMAE' },
+          ].map(f => (
+            <div key={f.text} className="flex items-center gap-3 bg-white/10 backdrop-blur rounded-xl px-4 py-2.5">
+              <span className="text-lg">{f.icon}</span>
+              <span className="text-sm text-white/90 font-medium text-left">{f.text}</span>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Formulario — sube sobre el hero */}
-      <div style={{background:'#F7F8FA',flex:1,borderRadius:'24px 24px 0 0',marginTop:-24,padding:'28px 24px 40px'}}>
-        <div style={{maxWidth:380,margin:'0 auto'}}>
-
-          <h2 style={{fontSize:18,fontWeight:700,color:'#1a1a1a',margin:'0 0 20px',textAlign:'center'}}>Inicia sesión</h2>
+      {/* Formulario */}
+      <div className="flex-1 bg-gray-50 rounded-t-3xl -mt-5 px-6 pt-8 pb-10">
+        <div className="max-w-sm mx-auto">
+          <h2 className="text-xl font-bold text-gray-900 text-center mb-6">Inicia sesión</h2>
 
           {error && (
-            <div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:10,padding:'10px 14px',marginBottom:14}}>
-              <p style={{color:'#DC2626',fontSize:13,margin:0}}>{error}</p>
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4">
+              <p className="text-red-600 text-sm">{error}</p>
             </div>
           )}
 
-          <input type="email" placeholder="Correo electrónico" value={email}
+          <input
+            type="email"
+            placeholder="Correo electrónico"
+            value={email}
             onChange={e => setEmail(e.target.value)}
-            style={{...inp, background:'#fff', border:'1px solid #E8E8E8', color:'#1a1a1a'}}/>
-          <input type="password" placeholder="Contraseña" value={password}
+            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-900 text-sm mb-3 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition"
+          />
+          <input
+            type="password"
+            placeholder="Contraseña"
+            value={password}
             onChange={e => setPassword(e.target.value)}
-            style={{...inp, background:'#fff', border:'1px solid #E8E8E8', color:'#1a1a1a', marginBottom:16}}/>
+            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-900 text-sm mb-5 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition"
+          />
 
-          <button onClick={handleLogin} disabled={loading}
-            style={{width:'100%',padding:14,background:'#0F6E56',border:'none',borderRadius:10,color:'#fff',fontSize:15,fontWeight:700,cursor:'pointer',boxShadow:'0 2px 12px rgba(15,110,86,0.3)',marginBottom:14}}>
+          <button
+            onClick={handleLogin}
+            disabled={loading}
+            className="w-full py-4 bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white font-bold text-base rounded-xl shadow-md shadow-emerald-200 transition mb-4"
+          >
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
 
-          <p style={{color:'#888',fontSize:13,textAlign:'center',margin:'0 0 24px'}}>
+          <p className="text-center text-sm text-gray-500 mb-8">
             ¿No tienes cuenta?{' '}
-            <a href="/registro" style={{color:'#0F6E56',fontWeight:700,textDecoration:'none'}}>Regístrate gratis</a>
+            <a href="/registro" className="text-emerald-700 font-bold">Regístrate gratis</a>
           </p>
 
           {/* Frase del día */}
-          <div style={{background:'#F0FAF6',border:'1px solid #C8EAE0',borderRadius:12,padding:'12px 16px',textAlign:'center'}}>
-            <p style={{fontSize:10,color:'#0F6E56',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em',margin:'0 0 4px'}}>Frase del día</p>
-            <p style={{fontSize:12,color:'#555',margin:0,fontStyle:'italic',lineHeight:1.5}}>{tip}</p>
+          <div className="bg-emerald-50 border border-emerald-100 rounded-2xl px-5 py-4 text-center">
+            <p className="text-xs font-bold text-emerald-700 uppercase tracking-widest mb-1">Frase del día</p>
+            <p className="text-sm text-gray-600 italic leading-relaxed">{tip}</p>
           </div>
-
         </div>
       </div>
 
