@@ -27,6 +27,20 @@ const emptyItem = () => ({
   recipe_text: '', sort_order: 0
 })
 
+async function callClaude(prompt) {
+  const res = await fetch('/.netlify/functions/claude-proxy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  })
+  const data = await res.json()
+  return data.content[0].text
+}
+
 export default function NutritionistPage({ profile }) {
   const [tab, setTab] = useState('pacientes')
   const [patients, setPatients] = useState([])
@@ -39,8 +53,12 @@ export default function NutritionistPage({ profile }) {
   const [saving, setSaving] = useState(false)
   const [activeItem, setActiveItem] = useState(null)
   const [subTab, setSubTab] = useState('perfil')
-  const [suggestions, setSuggestions] = useState({})
+
+  // Sugerencias por item
+  const [suggestionOptions, setSuggestionOptions] = useState({})
+  const [selectedOptions, setSelectedOptions] = useState({})
   const [loadingSuggestion, setLoadingSuggestion] = useState(null)
+  const [loadingRecipe, setLoadingRecipe] = useState(null)
 
   useEffect(() => { loadPatients() }, [])
 
@@ -63,7 +81,8 @@ export default function NutritionistPage({ profile }) {
     setItems([])
     setPlan(null)
     setActiveItem(null)
-    setSuggestions({})
+    setSuggestionOptions({})
+    setSelectedOptions({})
 
     const { data: planData } = await supabase
       .from('meal_plans').select('*')
@@ -122,55 +141,93 @@ export default function NutritionistPage({ profile }) {
     setActiveItem(null)
   }
 
-  async function getSuggestions(item, index) {
+  async function getSuggestionOptions(item, index) {
     const itemKey = item._local_id || item.id
     setLoadingSuggestion(itemKey)
 
     const grupos = SMAE_GROUPS
       .filter(g => parseFloat(item[g.key]) > 0)
-      .map(g => `${item[g.key]} equivalente(s) de ${g.label}`)
-      .join(', ')
+      .map(g => `{"grupo":"${g.label}","cantidad":${item[g.key]}}`)
+      .join(',')
 
     const contexto = [
-      clinicalProfile.alergias ? `Alergias e intolerancias: ${clinicalProfile.alergias}` : '',
-      clinicalProfile.condiciones ? `Condiciones médicas: ${clinicalProfile.condiciones}` : '',
-      clinicalProfile.notas_clinicas ? `Notas clínicas: ${clinicalProfile.notas_clinicas}` : '',
+      clinicalProfile.alergias ? `Alergias: ${clinicalProfile.alergias}` : '',
+      clinicalProfile.condiciones ? `Condiciones: ${clinicalProfile.condiciones}` : '',
+      clinicalProfile.notas_clinicas ? `Notas: ${clinicalProfile.notas_clinicas}` : '',
     ].filter(Boolean).join('. ')
 
     try {
-      const res = await fetch('/.netlify/functions/claude-proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 600,
-          messages: [{
-            role: 'user',
-            content: `Eres un asistente de nutrición clínica experto en el Sistema Mexicano de Alimentos Equivalentes (SMAE).
+      const text = await callClaude(`Eres experto en SMAE (Sistema Mexicano de Alimentos Equivalentes).
 
-El nutriólogo está elaborando el plan para "${item.meal_time_label}" con: ${grupos}.
+Para el tiempo "${item.meal_time_label}" con estos equivalentes: [${grupos}].
+Perfil del paciente: ${contexto || 'Sin restricciones'}.
 
-Perfil del paciente: ${contexto || 'Sin restricciones especiales'}.
+Devuelve SOLO un JSON sin backticks con esta estructura exacta:
+{
+  "advertencia": "texto si hay restricción crítica o null",
+  "grupos": [
+    {
+      "grupo": "Verdura",
+      "icono": "🥦",
+      "cantidad": 0.5,
+      "opciones": [
+        {"nombre": "Jitomate", "cantidad": "½ mediano", "gramos": 90, "apto": true},
+        {"nombre": "Cebolla", "cantidad": "¼ taza", "gramos": 40, "apto": true},
+        {"nombre": "Espinaca", "cantidad": "1 taza", "gramos": 30, "apto": true},
+        {"nombre": "Calabacita", "cantidad": "½ pieza", "gramos": 80, "apto": true}
+      ]
+    }
+  ]
+}
+Da exactamente 4 opciones por grupo. Marca apto:false si no es recomendable para el perfil del paciente.`)
 
-Sugiere 2-3 opciones concretas de alimentos mexicanos para cubrir cada equivalente del plan, considerando el perfil clínico. Sé específico con cantidades. Si hay restricciones importantes, adviértelas claramente.
-
-El nutriólogo tomará la decisión final. Responde en español, de forma concisa y práctica. Máximo 120 palabras.`
-          }]
-        })
+      const clean = text.replace(/```json|```/g, '').trim()
+      const parsed = JSON.parse(clean)
+      setSuggestionOptions(prev => ({ ...prev, [itemKey]: parsed }))
+      // Inicializar selecciones con primera opción apta de cada grupo
+      const initSelected = {}
+      parsed.grupos.forEach(g => {
+        const primera = g.opciones.find(o => o.apto)
+        if (primera) initSelected[g.grupo] = primera
       })
-      const data = await res.json()
-      const text = data.content[0].text
-      setSuggestions(prev => ({ ...prev, [itemKey]: text }))
+      setSelectedOptions(prev => ({ ...prev, [itemKey]: initSelected }))
     } catch (e) {
-      setSuggestions(prev => ({ ...prev, [itemKey]: 'Error al generar sugerencias.' }))
+      alert('Error al generar sugerencias. Intenta de nuevo.')
     }
     setLoadingSuggestion(null)
   }
 
-  async function useSuggestion(suggestion, index) {
-    updateItem(index, 'recipe_text', suggestion)
-    const itemKey = items[index]._local_id || items[index].id
-    setSuggestions(prev => { const n = {...prev}; delete n[itemKey]; return n })
+  async function generateRecipe(item, index) {
+    const itemKey = item._local_id || item.id
+    const selected = selectedOptions[itemKey]
+    if (!selected) return
+
+    setLoadingRecipe(itemKey)
+
+    const seleccionados = Object.entries(selected)
+      .map(([grupo, opcion]) => `${grupo}: ${opcion.nombre} ${opcion.cantidad} (${opcion.gramos}g)`)
+      .join(', ')
+
+    const contexto = [
+      clinicalProfile.alergias ? `Alergias: ${clinicalProfile.alergias}` : '',
+      clinicalProfile.condiciones ? `Condiciones: ${clinicalProfile.condiciones}` : '',
+      clinicalProfile.notas_clinicas ? `Notas: ${clinicalProfile.notas_clinicas}` : '',
+    ].filter(Boolean).join('. ')
+
+    try {
+      const text = await callClaude(`Eres nutriólogo experto. El paciente tiene: ${contexto || 'sin restricciones'}.
+
+Para el ${item.meal_time_label} se seleccionaron estos alimentos: ${seleccionados}.
+
+Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTAMENTE esos ingredientes y cantidades. Incluye preparación breve. Tono amigable y motivador. Máximo 80 palabras. Solo la receta, sin JSON.`)
+
+      updateItem(index, 'recipe_text', text)
+      setSuggestionOptions(prev => { const n = {...prev}; delete n[itemKey]; return n })
+      setSelectedOptions(prev => { const n = {...prev}; delete n[itemKey]; return n })
+    } catch (e) {
+      alert('Error al generar receta.')
+    }
+    setLoadingRecipe(null)
   }
 
   async function savePlan() {
@@ -261,13 +318,12 @@ El nutriólogo tomará la decisión final. Responde en español, de forma concis
             </button>
 
             <div className="bg-white rounded-2xl p-4 shadow-sm mb-4">
-              <p className="font-bold text-gray-900 text-base">{selectedPatient.full_name}</p>
+              <p className="font-bold text-gray-900">{selectedPatient.full_name}</p>
               <p className="text-xs text-gray-400 mt-0.5">
                 {selectedPatient.daily_calories} kcal/día · {selectedPatient.goal === 'lose' ? 'Bajar peso' : selectedPatient.goal === 'gain' ? 'Subir masa muscular' : 'Mantener peso'}
               </p>
             </div>
 
-            {/* SubTabs */}
             <div className="flex gap-2 mb-4 bg-gray-100 p-1 rounded-xl">
               {[
                 { id: 'perfil', label: '🩺 Perfil clínico' },
@@ -285,36 +341,27 @@ El nutriólogo tomará la decisión final. Responde en español, de forma concis
               <div className="flex flex-col gap-4">
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                   <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Alergias e intolerancias</p>
-                  <textarea
-                    placeholder="Ej: Intolerancia a la lactosa, alergia al gluten, alergia a mariscos..."
+                  <textarea placeholder="Ej: Intolerancia a la lactosa, alergia al gluten..."
                     value={clinicalProfile.alergias}
                     onChange={e => setClinicalProfile({ ...clinicalProfile, alergias: e.target.value })}
-                    rows={2}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 outline-none resize-none focus:border-emerald-500"
-                  />
+                    rows={2} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 outline-none resize-none focus:border-emerald-500"/>
                 </div>
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                   <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Condiciones médicas</p>
-                  <textarea
-                    placeholder="Ej: Diabetes tipo 2, hipertensión, colesterol alto, hipotiroidismo..."
+                  <textarea placeholder="Ej: Diabetes tipo 2, hipertensión, colesterol alto..."
                     value={clinicalProfile.condiciones}
                     onChange={e => setClinicalProfile({ ...clinicalProfile, condiciones: e.target.value })}
-                    rows={2}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 outline-none resize-none focus:border-emerald-500"
-                  />
+                    rows={2} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 outline-none resize-none focus:border-emerald-500"/>
                 </div>
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                   <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Notas clínicas</p>
-                  <textarea
-                    placeholder="Ej: No le gusta el pescado, vegetariano, trabaja de noche..."
+                  <textarea placeholder="Ej: No le gusta el pescado, vegetariano, trabaja de noche..."
                     value={clinicalProfile.notas_clinicas}
                     onChange={e => setClinicalProfile({ ...clinicalProfile, notas_clinicas: e.target.value })}
-                    rows={3}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 outline-none resize-none focus:border-emerald-500"
-                  />
+                    rows={3} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 outline-none resize-none focus:border-emerald-500"/>
                 </div>
                 <button onClick={saveClinicalProfile} disabled={savingProfile}
-                  className="w-full py-4 bg-emerald-700 text-white font-bold rounded-2xl shadow-md text-base">
+                  className="w-full py-4 bg-emerald-700 text-white font-bold rounded-2xl shadow-md">
                   {savingProfile ? 'Guardando...' : 'Guardar perfil clínico ✓'}
                 </button>
               </div>
@@ -328,9 +375,7 @@ El nutriólogo tomará la decisión final. Responde en español, de forma concis
                     <p className="text-3xl mb-2">📋</p>
                     <p className="font-bold text-emerald-700 mb-2">Sin plan asignado</p>
                     <p className="text-sm text-gray-500 mb-4">Crea el primer plan de equivalentes para este paciente</p>
-                    <button onClick={createPlan} className="px-6 py-2.5 bg-emerald-700 text-white font-bold rounded-xl text-sm">
-                      Crear plan
-                    </button>
+                    <button onClick={createPlan} className="px-6 py-2.5 bg-emerald-700 text-white font-bold rounded-xl text-sm">Crear plan</button>
                   </div>
                 ) : (
                   <div className="flex flex-col gap-4">
@@ -354,8 +399,10 @@ El nutriólogo tomará la decisión final. Responde en español, de forma concis
                       const mt = MEAL_TIMES.find(m => m.key === item.meal_time)
                       const itemKey = item._local_id || item.id
                       const isOpen = activeItem === itemKey
-                      const hasSuggestion = suggestions[itemKey]
-                      const isLoadingSuggestion = loadingSuggestion === itemKey
+                      const options = suggestionOptions[itemKey]
+                      const selected = selectedOptions[itemKey] || {}
+                      const isLoadingSugg = loadingSuggestion === itemKey
+                      const isLoadingRec = loadingRecipe === itemKey
 
                       return (
                         <div key={itemKey} className="bg-white rounded-2xl shadow-sm overflow-hidden">
@@ -373,6 +420,8 @@ El nutriólogo tomará la decisión final. Responde en español, de forma concis
 
                           {isOpen && (
                             <div className="px-4 pb-4 border-t border-gray-50 pt-3">
+
+                              {/* Equivalentes */}
                               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Equivalentes</p>
                               <div className="grid grid-cols-4 gap-3 mb-4">
                                 {SMAE_GROUPS.map(g => (
@@ -387,50 +436,93 @@ El nutriólogo tomará la decisión final. Responde en español, de forma concis
                               </div>
 
                               {/* Sugerencias IA */}
-                              {!hasSuggestion && !isLoadingSuggestion && (
-                                <button onClick={() => getSuggestions(item, index)}
+                              {!options && !isLoadingSugg && (
+                                <button onClick={() => getSuggestionOptions(item, index)}
                                   className="w-full py-2.5 mb-3 bg-violet-50 border border-violet-200 text-violet-700 font-semibold rounded-xl text-sm flex items-center justify-center gap-2">
-                                  💡 Pedir sugerencias a IA
+                                  💡 Pedir opciones de alimentos a IA
                                 </button>
                               )}
 
-                              {isLoadingSuggestion && (
-                                <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 text-center mb-3">
+                              {isLoadingSugg && (
+                                <div className="bg-violet-50 rounded-xl p-4 text-center mb-3">
                                   <div className="w-6 h-6 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" style={{borderWidth:2,borderStyle:'solid'}}/>
-                                  <p className="text-sm text-violet-600 font-medium">Generando sugerencias...</p>
+                                  <p className="text-sm text-violet-600 font-medium">Generando opciones personalizadas...</p>
                                 </div>
                               )}
 
-                              {hasSuggestion && (
+                              {options && (
                                 <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 mb-3">
-                                  <p className="text-xs font-bold text-violet-700 uppercase tracking-widest mb-2">💡 Sugerencias IA — revisa antes de usar</p>
-                                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap mb-3">{hasSuggestion}</p>
-                                  <div className="flex gap-2">
-                                    <button onClick={() => useSuggestion(hasSuggestion, index)}
-                                      className="flex-1 py-2 bg-violet-600 text-white font-semibold rounded-lg text-xs">
-                                      Usar como receta
-                                    </button>
-                                    <button onClick={() => getSuggestions(item, index)}
-                                      className="flex-1 py-2 bg-white border border-violet-200 text-violet-600 font-semibold rounded-lg text-xs">
-                                      Regenerar
-                                    </button>
-                                    <button onClick={() => setSuggestions(prev => { const n = {...prev}; delete n[itemKey]; return n })}
-                                      className="px-3 py-2 bg-white border border-gray-200 text-gray-400 font-semibold rounded-lg text-xs">
-                                      ✕
-                                    </button>
+                                  <div className="flex justify-between items-center mb-3">
+                                    <p className="text-xs font-bold text-violet-700 uppercase tracking-widest">💡 Selecciona alimentos</p>
+                                    <button onClick={() => { setSuggestionOptions(prev => { const n={...prev}; delete n[itemKey]; return n }) }}
+                                      className="text-xs text-gray-400">✕ Cerrar</button>
                                   </div>
+
+                                  {options.advertencia && (
+                                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 mb-3">
+                                      <p className="text-xs text-amber-700 font-semibold">⚠️ {options.advertencia}</p>
+                                    </div>
+                                  )}
+
+                                  <div className="flex flex-col gap-4 mb-4">
+                                    {options.grupos.map(grupo => (
+                                      <div key={grupo.grupo}>
+                                        <p className="text-xs font-bold text-gray-600 mb-2">{grupo.icono} {grupo.grupo} ({grupo.cantidad} equiv.)</p>
+                                        <div className="flex flex-col gap-1.5">
+                                          {grupo.opciones.map(opcion => {
+                                            const isSelected = selected[grupo.grupo]?.nombre === opcion.nombre
+                                            return (
+                                              <button key={opcion.nombre}
+                                                onClick={() => {
+                                                  if (!opcion.apto) return
+                                                  setSelectedOptions(prev => ({
+                                                    ...prev,
+                                                    [itemKey]: { ...prev[itemKey], [grupo.grupo]: opcion }
+                                                  }))
+                                                }}
+                                                className={`flex justify-between items-center px-3 py-2 rounded-lg text-left text-sm transition ${
+                                                  !opcion.apto
+                                                    ? 'bg-red-50 border border-red-100 text-red-400 cursor-not-allowed opacity-60'
+                                                    : isSelected
+                                                    ? 'bg-violet-600 text-white border border-violet-600'
+                                                    : 'bg-white border border-gray-200 text-gray-700 hover:border-violet-300'
+                                                }`}>
+                                                <span className="font-medium">{opcion.nombre}</span>
+                                                <span className={`text-xs ${isSelected ? 'text-violet-200' : 'text-gray-400'}`}>
+                                                  {opcion.cantidad} · {opcion.gramos}g {!opcion.apto && '· No recomendado'}
+                                                </span>
+                                              </button>
+                                            )
+                                          })}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  <button
+                                    onClick={() => generateRecipe(item, index)}
+                                    disabled={isLoadingRec}
+                                    className="w-full py-3 bg-violet-600 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2">
+                                    {isLoadingRec ? (
+                                      <>
+                                        <div className="w-4 h-4 border-white border-t-transparent rounded-full animate-spin" style={{borderWidth:2,borderStyle:'solid'}}/>
+                                        Generando receta...
+                                      </>
+                                    ) : '✨ Generar receta con selección'}
+                                  </button>
                                 </div>
                               )}
 
+                              {/* Receta para el paciente */}
                               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Receta para el paciente</p>
                               <textarea
                                 placeholder="Escribe o ajusta la receta que verá el paciente..."
                                 value={item.recipe_text}
                                 onChange={e => updateItem(index, 'recipe_text', e.target.value)}
-                                rows={3}
+                                rows={4}
                                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 outline-none resize-none focus:border-emerald-500"
                               />
-                              <button onClick={() => removeItem(index)} className="mt-3 text-xs text-red-400 font-semibold">
+                              <button onClick={() => removeItem(index)} className="mt-2 text-xs text-red-400 font-semibold">
                                 Eliminar este tiempo de comida
                               </button>
                             </div>
