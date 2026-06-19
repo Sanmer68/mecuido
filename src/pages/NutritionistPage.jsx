@@ -39,6 +39,8 @@ export default function NutritionistPage({ profile }) {
   const [saving, setSaving] = useState(false)
   const [activeItem, setActiveItem] = useState(null)
   const [subTab, setSubTab] = useState('perfil')
+  const [suggestions, setSuggestions] = useState({})
+  const [loadingSuggestion, setLoadingSuggestion] = useState(null)
 
   useEffect(() => { loadPatients() }, [])
 
@@ -61,6 +63,7 @@ export default function NutritionistPage({ profile }) {
     setItems([])
     setPlan(null)
     setActiveItem(null)
+    setSuggestions({})
 
     const { data: planData } = await supabase
       .from('meal_plans').select('*')
@@ -117,6 +120,57 @@ export default function NutritionistPage({ profile }) {
   function removeItem(index) {
     setItems(items.filter((_, i) => i !== index))
     setActiveItem(null)
+  }
+
+  async function getSuggestions(item, index) {
+    const itemKey = item._local_id || item.id
+    setLoadingSuggestion(itemKey)
+
+    const grupos = SMAE_GROUPS
+      .filter(g => parseFloat(item[g.key]) > 0)
+      .map(g => `${item[g.key]} equivalente(s) de ${g.label}`)
+      .join(', ')
+
+    const contexto = [
+      clinicalProfile.alergias ? `Alergias e intolerancias: ${clinicalProfile.alergias}` : '',
+      clinicalProfile.condiciones ? `Condiciones médicas: ${clinicalProfile.condiciones}` : '',
+      clinicalProfile.notas_clinicas ? `Notas clínicas: ${clinicalProfile.notas_clinicas}` : '',
+    ].filter(Boolean).join('. ')
+
+    try {
+      const res = await fetch('/.netlify/functions/claude-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 600,
+          messages: [{
+            role: 'user',
+            content: `Eres un asistente de nutrición clínica experto en el Sistema Mexicano de Alimentos Equivalentes (SMAE).
+
+El nutriólogo está elaborando el plan para "${item.meal_time_label}" con: ${grupos}.
+
+Perfil del paciente: ${contexto || 'Sin restricciones especiales'}.
+
+Sugiere 2-3 opciones concretas de alimentos mexicanos para cubrir cada equivalente del plan, considerando el perfil clínico. Sé específico con cantidades. Si hay restricciones importantes, adviértelas claramente.
+
+El nutriólogo tomará la decisión final. Responde en español, de forma concisa y práctica. Máximo 120 palabras.`
+          }]
+        })
+      })
+      const data = await res.json()
+      const text = data.content[0].text
+      setSuggestions(prev => ({ ...prev, [itemKey]: text }))
+    } catch (e) {
+      setSuggestions(prev => ({ ...prev, [itemKey]: 'Error al generar sugerencias.' }))
+    }
+    setLoadingSuggestion(null)
+  }
+
+  async function useSuggestion(suggestion, index) {
+    updateItem(index, 'recipe_text', suggestion)
+    const itemKey = items[index]._local_id || items[index].id
+    setSuggestions(prev => { const n = {...prev}; delete n[itemKey]; return n })
   }
 
   async function savePlan() {
@@ -239,29 +293,26 @@ export default function NutritionistPage({ profile }) {
                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 outline-none resize-none focus:border-emerald-500"
                   />
                 </div>
-
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                   <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Condiciones médicas</p>
                   <textarea
-                    placeholder="Ej: Diabetes tipo 2, hipertensión, colesterol alto, hipotiroidismo, síndrome metabólico..."
+                    placeholder="Ej: Diabetes tipo 2, hipertensión, colesterol alto, hipotiroidismo..."
                     value={clinicalProfile.condiciones}
                     onChange={e => setClinicalProfile({ ...clinicalProfile, condiciones: e.target.value })}
                     rows={2}
                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 outline-none resize-none focus:border-emerald-500"
                   />
                 </div>
-
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                   <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Notas clínicas</p>
                   <textarea
-                    placeholder="Ej: No le gusta el pescado, vegetariano, come muy rápido, trabaja de noche, entrena 3 veces por semana..."
+                    placeholder="Ej: No le gusta el pescado, vegetariano, trabaja de noche..."
                     value={clinicalProfile.notas_clinicas}
                     onChange={e => setClinicalProfile({ ...clinicalProfile, notas_clinicas: e.target.value })}
                     rows={3}
                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 outline-none resize-none focus:border-emerald-500"
                   />
                 </div>
-
                 <button onClick={saveClinicalProfile} disabled={savingProfile}
                   className="w-full py-4 bg-emerald-700 text-white font-bold rounded-2xl shadow-md text-base">
                   {savingProfile ? 'Guardando...' : 'Guardar perfil clínico ✓'}
@@ -301,11 +352,14 @@ export default function NutritionistPage({ profile }) {
                     {/* Tiempos */}
                     {items.map((item, index) => {
                       const mt = MEAL_TIMES.find(m => m.key === item.meal_time)
-                      const itemId = item._local_id || item.id
-                      const isOpen = activeItem === itemId
+                      const itemKey = item._local_id || item.id
+                      const isOpen = activeItem === itemKey
+                      const hasSuggestion = suggestions[itemKey]
+                      const isLoadingSuggestion = loadingSuggestion === itemKey
+
                       return (
-                        <div key={itemId} className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                          <button onClick={() => setActiveItem(isOpen ? null : itemId)}
+                        <div key={itemKey} className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                          <button onClick={() => setActiveItem(isOpen ? null : itemKey)}
                             className="w-full flex justify-between items-center px-4 py-3 text-left">
                             <div className="flex items-center gap-2">
                               <span className="text-lg">{mt?.icon}</span>
@@ -332,9 +386,45 @@ export default function NutritionistPage({ profile }) {
                                 ))}
                               </div>
 
-                              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Receta sugerida (opcional)</p>
+                              {/* Sugerencias IA */}
+                              {!hasSuggestion && !isLoadingSuggestion && (
+                                <button onClick={() => getSuggestions(item, index)}
+                                  className="w-full py-2.5 mb-3 bg-violet-50 border border-violet-200 text-violet-700 font-semibold rounded-xl text-sm flex items-center justify-center gap-2">
+                                  💡 Pedir sugerencias a IA
+                                </button>
+                              )}
+
+                              {isLoadingSuggestion && (
+                                <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 text-center mb-3">
+                                  <div className="w-6 h-6 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" style={{borderWidth:2,borderStyle:'solid'}}/>
+                                  <p className="text-sm text-violet-600 font-medium">Generando sugerencias...</p>
+                                </div>
+                              )}
+
+                              {hasSuggestion && (
+                                <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 mb-3">
+                                  <p className="text-xs font-bold text-violet-700 uppercase tracking-widest mb-2">💡 Sugerencias IA — revisa antes de usar</p>
+                                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap mb-3">{hasSuggestion}</p>
+                                  <div className="flex gap-2">
+                                    <button onClick={() => useSuggestion(hasSuggestion, index)}
+                                      className="flex-1 py-2 bg-violet-600 text-white font-semibold rounded-lg text-xs">
+                                      Usar como receta
+                                    </button>
+                                    <button onClick={() => getSuggestions(item, index)}
+                                      className="flex-1 py-2 bg-white border border-violet-200 text-violet-600 font-semibold rounded-lg text-xs">
+                                      Regenerar
+                                    </button>
+                                    <button onClick={() => setSuggestions(prev => { const n = {...prev}; delete n[itemKey]; return n })}
+                                      className="px-3 py-2 bg-white border border-gray-200 text-gray-400 font-semibold rounded-lg text-xs">
+                                      ✕
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Receta para el paciente</p>
                               <textarea
-                                placeholder="Ej: Chilaquiles ligeros: 3 tortillas horneadas + 120g pechuga + salsa verde..."
+                                placeholder="Escribe o ajusta la receta que verá el paciente..."
                                 value={item.recipe_text}
                                 onChange={e => updateItem(index, 'recipe_text', e.target.value)}
                                 rows={3}
