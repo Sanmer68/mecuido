@@ -11,46 +11,60 @@ exports.handler = async (event) => {
     }
   }
 
-  const { createClient } = require('@supabase/supabase-js')
+  const { email, password, profile } = JSON.parse(event.body)
 
-  const supabase = createClient(
-    process.env.VITE_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY
-  )
+  const SUPABASE_URL = process.env.VITE_SUPABASE_URL
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY
 
-  const body = JSON.parse(event.body)
-  const { email, password, profile } = body
-
-  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true
+  // 1. Crear usuario en auth
+  const authRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SERVICE_KEY,
+      'Authorization': `Bearer ${SERVICE_KEY}`
+    },
+    body: JSON.stringify({
+      email,
+      password,
+      email_confirm: true
+    })
   })
 
-  if (authError) {
+  const authData = await authRes.json()
+
+  if (!authRes.ok) {
     return {
       statusCode: 400,
       headers: { 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify({ error: authError.message })
+      body: JSON.stringify({ error: authData.message || 'Error al crear usuario' })
     }
   }
 
-  const { error: profileError } = await supabase.from('profiles').insert({
-    id: authData.user.id,
-    ...profile
+  // 2. Crear perfil
+  const profileRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SERVICE_KEY,
+      'Authorization': `Bearer ${SERVICE_KEY}`,
+      'Prefer': 'return=minimal'
+    },
+    body: JSON.stringify({ id: authData.id, ...profile })
   })
 
-  if (profileError) {
+  if (!profileRes.ok) {
+    const profileError = await profileRes.json()
     return {
       statusCode: 400,
       headers: { 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify({ error: profileError.message })
+      body: JSON.stringify({ error: profileError.message || 'Error al crear perfil' })
     }
   }
 
   return {
     statusCode: 200,
     headers: { 'Access-Control-Allow-Origin': '*' },
-    body: JSON.stringify({ success: true, user_id: authData.user.id })
+    body: JSON.stringify({ success: true, user_id: authData.id })
   }
 }
