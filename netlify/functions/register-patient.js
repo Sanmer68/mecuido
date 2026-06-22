@@ -13,7 +13,7 @@ exports.handler = async (event) => {
 
   const { email, password, profile } = JSON.parse(event.body)
 
-  const SUPABASE_URL = process.env.VITE_SUPABASE_URL
+ const SUPABASE_URL = process.env.SUPABASE_URL
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY
 
   // 1. Crear usuario en auth
