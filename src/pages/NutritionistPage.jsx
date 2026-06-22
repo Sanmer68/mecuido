@@ -104,43 +104,45 @@ export default function NutritionistPage({ profile }) {
 
     const calories = calcCalories(patientForm)
 
-    const { data, error } = await supabase.auth.admin
-      ? null // admin API no disponible en cliente
-      : { data: null, error: { message: 'use_signup' } }
-
-    // Usamos signUp normal — el paciente recibirá el correo
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: patientForm.email,
-      password: patientForm.password,
-      options: { data: { full_name: patientForm.full_name } }
-    })
-
-    if (authError) {
-      setPatientError(authError.message)
-      setSavingPatient(false)
-      return
-    }
-
-    if (authData.user) {
-      await supabase.from('profiles').insert({
-        id: authData.user.id,
-        full_name: patientForm.full_name,
-        email: patientForm.email,
-        role: 'patient',
-        weight_kg: parseFloat(patientForm.weight_kg) || null,
-        height_cm: parseFloat(patientForm.height_cm) || null,
-        age: parseInt(patientForm.age) || null,
-        sex: patientForm.sex,
-        activity_level: patientForm.activity_level,
-        goal: patientForm.goal,
-        daily_calories: calories || null
+    try {
+      const res = await fetch('/.netlify/functions/register-patient', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: patientForm.email,
+          password: patientForm.password,
+          profile: {
+            full_name: patientForm.full_name,
+            email: patientForm.email,
+            role: 'patient',
+            weight_kg: parseFloat(patientForm.weight_kg) || null,
+            height_cm: parseFloat(patientForm.height_cm) || null,
+            age: parseInt(patientForm.age) || null,
+            sex: patientForm.sex,
+            activity_level: patientForm.activity_level,
+            goal: patientForm.goal,
+            daily_calories: calories || null
+          }
+        })
       })
-    }
 
-    setSavingPatient(false)
-    setShowNewPatient(false)
-    setPatientForm(emptyPatientForm())
-    await loadPatients()
+      const data = await res.json()
+
+      if (data.error) {
+        setPatientError(data.error)
+        setSavingPatient(false)
+        return
+      }
+
+      setSavingPatient(false)
+      setShowNewPatient(false)
+      setPatientForm(emptyPatientForm())
+      await loadPatients()
+
+    } catch (e) {
+      setPatientError('Error al registrar. Intenta de nuevo.')
+      setSavingPatient(false)
+    }
   }
 
   async function selectPatient(patient) {
