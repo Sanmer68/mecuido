@@ -27,6 +27,12 @@ const emptyItem = () => ({
   recipe_text: '', sort_order: 0
 })
 
+const emptyPatientForm = () => ({
+  full_name: '', email: '', password: '',
+  weight_kg: '', height_cm: '', age: '', sex: 'female',
+  activity_level: 'moderate', goal: 'maintain'
+})
+
 async function callClaude(prompt) {
   const res = await fetch('/.netlify/functions/claude-proxy', {
     method: 'POST',
@@ -41,6 +47,21 @@ async function callClaude(prompt) {
   return data.content[0].text
 }
 
+function calcCalories(form) {
+  const w = parseFloat(form.weight_kg)
+  const h = parseFloat(form.height_cm)
+  const a = parseInt(form.age)
+  if (!w || !h || !a) return 0
+  let bmr = form.sex === 'female'
+    ? 447.6 + (9.25 * w) + (3.1 * h) - (4.33 * a)
+    : 88.36 + (13.4 * w) + (4.8 * h) - (5.7 * a)
+  const factors = { sedentary: 1.2, moderate: 1.55, active: 1.725, very_active: 1.9 }
+  let tdee = bmr * factors[form.activity_level]
+  if (form.goal === 'lose') tdee -= 500
+  if (form.goal === 'gain') tdee += 300
+  return Math.round(tdee)
+}
+
 export default function NutritionistPage({ profile }) {
   const [tab, setTab] = useState('pacientes')
   const [patients, setPatients] = useState([])
@@ -53,12 +74,16 @@ export default function NutritionistPage({ profile }) {
   const [saving, setSaving] = useState(false)
   const [activeItem, setActiveItem] = useState(null)
   const [subTab, setSubTab] = useState('perfil')
-
-  // Sugerencias por item
   const [suggestionOptions, setSuggestionOptions] = useState({})
   const [selectedOptions, setSelectedOptions] = useState({})
   const [loadingSuggestion, setLoadingSuggestion] = useState(null)
   const [loadingRecipe, setLoadingRecipe] = useState(null)
+
+  // Nuevo paciente
+  const [showNewPatient, setShowNewPatient] = useState(false)
+  const [patientForm, setPatientForm] = useState(emptyPatientForm())
+  const [savingPatient, setSavingPatient] = useState(false)
+  const [patientError, setPatientError] = useState('')
 
   useEffect(() => { loadPatients() }, [])
 
@@ -67,6 +92,55 @@ export default function NutritionistPage({ profile }) {
     const { data } = await supabase.from('profiles').select('*').eq('role', 'patient')
     setPatients(data || [])
     setLoading(false)
+  }
+
+  async function registerPatient() {
+    if (!patientForm.full_name || !patientForm.email || !patientForm.password) {
+      setPatientError('Nombre, correo y contraseña son obligatorios')
+      return
+    }
+    setSavingPatient(true)
+    setPatientError('')
+
+    const calories = calcCalories(patientForm)
+
+    const { data, error } = await supabase.auth.admin
+      ? null // admin API no disponible en cliente
+      : { data: null, error: { message: 'use_signup' } }
+
+    // Usamos signUp normal — el paciente recibirá el correo
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: patientForm.email,
+      password: patientForm.password,
+      options: { data: { full_name: patientForm.full_name } }
+    })
+
+    if (authError) {
+      setPatientError(authError.message)
+      setSavingPatient(false)
+      return
+    }
+
+    if (authData.user) {
+      await supabase.from('profiles').insert({
+        id: authData.user.id,
+        full_name: patientForm.full_name,
+        email: patientForm.email,
+        role: 'patient',
+        weight_kg: parseFloat(patientForm.weight_kg) || null,
+        height_cm: parseFloat(patientForm.height_cm) || null,
+        age: parseInt(patientForm.age) || null,
+        sex: patientForm.sex,
+        activity_level: patientForm.activity_level,
+        goal: patientForm.goal,
+        daily_calories: calories || null
+      })
+    }
+
+    setSavingPatient(false)
+    setShowNewPatient(false)
+    setPatientForm(emptyPatientForm())
+    await loadPatients()
   }
 
   async function selectPatient(patient) {
@@ -141,7 +215,7 @@ export default function NutritionistPage({ profile }) {
     setActiveItem(null)
   }
 
-  async function getSuggestionOptions(item, index) {
+  async function getSuggestionOptions(item) {
     const itemKey = item._local_id || item.id
     setLoadingSuggestion(itemKey)
 
@@ -184,7 +258,6 @@ Da exactamente 4 opciones por grupo. Marca apto:false si no es recomendable para
       const clean = text.replace(/```json|```/g, '').trim()
       const parsed = JSON.parse(clean)
       setSuggestionOptions(prev => ({ ...prev, [itemKey]: parsed }))
-      // Inicializar selecciones con primera opción apta de cada grupo
       const initSelected = {}
       parsed.grupos.forEach(g => {
         const primera = g.opciones.find(o => o.apto)
@@ -192,7 +265,7 @@ Da exactamente 4 opciones por grupo. Marca apto:false si no es recomendable para
       })
       setSelectedOptions(prev => ({ ...prev, [itemKey]: initSelected }))
     } catch (e) {
-      alert('Error al generar sugerencias. Intenta de nuevo.')
+      alert('Error al generar sugerencias.')
     }
     setLoadingSuggestion(null)
   }
@@ -201,7 +274,6 @@ Da exactamente 4 opciones por grupo. Marca apto:false si no es recomendable para
     const itemKey = item._local_id || item.id
     const selected = selectedOptions[itemKey]
     if (!selected) return
-
     setLoadingRecipe(itemKey)
 
     const seleccionados = Object.entries(selected)
@@ -217,9 +289,9 @@ Da exactamente 4 opciones por grupo. Marca apto:false si no es recomendable para
     try {
       const text = await callClaude(`Eres nutriólogo experto. El paciente tiene: ${contexto || 'sin restricciones'}.
 
-Para el ${item.meal_time_label} se seleccionaron estos alimentos: ${seleccionados}.
+Para el ${item.meal_time_label} se seleccionaron: ${seleccionados}.
 
-Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTAMENTE esos ingredientes y cantidades. Incluye preparación breve. Tono amigable y motivador. Máximo 80 palabras. Solo la receta, sin JSON.`)
+Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTAMENTE esos ingredientes y cantidades. Incluye preparación breve. Tono amigable. Máximo 80 palabras. Solo la receta, sin formato markdown, sin asteriscos, sin hashtags.`)
 
       updateItem(index, 'recipe_text', text)
       setSuggestionOptions(prev => { const n = {...prev}; delete n[itemKey]; return n })
@@ -262,6 +334,8 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
   }, {})
 
   const usedMealTimes = items.map(i => i.meal_time)
+  const inpCls = "w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 outline-none focus:border-emerald-500"
+  const selCls = inpCls + " cursor-pointer"
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -279,15 +353,23 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
       <div className="flex-1 max-w-2xl mx-auto w-full px-4 pt-5 pb-10">
 
         {/* PACIENTES */}
-        {tab === 'pacientes' && (
+        {tab === 'pacientes' && !showNewPatient && (
           <div>
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Mis pacientes</h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Mis pacientes</h2>
+              <button onClick={() => setShowNewPatient(true)}
+                className="px-4 py-2 bg-emerald-700 text-white font-bold rounded-xl text-sm flex items-center gap-1">
+                + Agregar
+              </button>
+            </div>
+
             {loading ? (
               <p className="text-gray-400 text-center py-10">Cargando...</p>
             ) : patients.length === 0 ? (
               <div className="bg-white rounded-2xl p-10 text-center shadow-sm">
                 <p className="text-3xl mb-2">👤</p>
                 <p className="font-bold text-gray-400">Sin pacientes registrados</p>
+                <p className="text-sm text-gray-300 mt-1">Agrega tu primer paciente</p>
               </div>
             ) : (
               <div className="flex flex-col gap-3">
@@ -306,6 +388,78 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* NUEVO PACIENTE */}
+        {showNewPatient && (
+          <div>
+            <button onClick={() => { setShowNewPatient(false); setPatientError('') }}
+              className="text-emerald-700 text-sm font-semibold mb-4 flex items-center gap-1">
+              ← Pacientes
+            </button>
+            <h2 className="text-lg font-bold text-gray-900 mb-4">Nuevo paciente</h2>
+
+            {patientError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4">
+                <p className="text-red-600 text-sm">{patientError}</p>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-4">
+              <div className="bg-white rounded-2xl p-4 shadow-sm flex flex-col gap-3">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Datos de acceso</p>
+                <input placeholder="Nombre completo *" value={patientForm.full_name}
+                  onChange={e => setPatientForm({...patientForm, full_name: e.target.value})} className={inpCls}/>
+                <input type="email" placeholder="Correo electrónico *" value={patientForm.email}
+                  onChange={e => setPatientForm({...patientForm, email: e.target.value})} className={inpCls}/>
+                <input type="password" placeholder="Contraseña temporal *" value={patientForm.password}
+                  onChange={e => setPatientForm({...patientForm, password: e.target.value})} className={inpCls}/>
+              </div>
+
+              <div className="bg-white rounded-2xl p-4 shadow-sm flex flex-col gap-3">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Datos físicos</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <input placeholder="Peso (kg)" type="number" value={patientForm.weight_kg}
+                    onChange={e => setPatientForm({...patientForm, weight_kg: e.target.value})} className={inpCls}/>
+                  <input placeholder="Altura (cm)" type="number" value={patientForm.height_cm}
+                    onChange={e => setPatientForm({...patientForm, height_cm: e.target.value})} className={inpCls}/>
+                </div>
+                <input placeholder="Edad" type="number" value={patientForm.age}
+                  onChange={e => setPatientForm({...patientForm, age: e.target.value})} className={inpCls}/>
+                <select value={patientForm.sex} onChange={e => setPatientForm({...patientForm, sex: e.target.value})} className={selCls}>
+                  <option value="female">Mujer</option>
+                  <option value="male">Hombre</option>
+                </select>
+              </div>
+
+              <div className="bg-white rounded-2xl p-4 shadow-sm flex flex-col gap-3">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Objetivo</p>
+                <select value={patientForm.activity_level} onChange={e => setPatientForm({...patientForm, activity_level: e.target.value})} className={selCls}>
+                  <option value="sedentary">Sedentario</option>
+                  <option value="moderate">Moderado (3-5 días/semana)</option>
+                  <option value="active">Activo (6-7 días/semana)</option>
+                  <option value="very_active">Muy activo</option>
+                </select>
+                <select value={patientForm.goal} onChange={e => setPatientForm({...patientForm, goal: e.target.value})} className={selCls}>
+                  <option value="lose">Bajar de peso</option>
+                  <option value="maintain">Mantener peso</option>
+                  <option value="gain">Subir masa muscular</option>
+                </select>
+
+                {patientForm.weight_kg && patientForm.height_cm && patientForm.age && (
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
+                    <p className="text-xs text-gray-500 mb-1">Meta calórica calculada</p>
+                    <p className="text-2xl font-extrabold text-emerald-700">{calcCalories(patientForm)} <span className="text-sm font-normal text-gray-400">kcal/día</span></p>
+                  </div>
+                )}
+              </div>
+
+              <button onClick={registerPatient} disabled={savingPatient}
+                className="w-full py-4 bg-emerald-700 text-white font-bold rounded-2xl shadow-md text-base">
+                {savingPatient ? 'Registrando...' : 'Registrar paciente ✓'}
+              </button>
+            </div>
           </div>
         )}
 
@@ -336,7 +490,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
               ))}
             </div>
 
-            {/* PERFIL CLINICO */}
             {subTab === 'perfil' && (
               <div className="flex flex-col gap-4">
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
@@ -367,7 +520,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
               </div>
             )}
 
-            {/* PLAN SMAE */}
             {subTab === 'plan' && (
               <div>
                 {!plan ? (
@@ -379,8 +531,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                   </div>
                 ) : (
                   <div className="flex flex-col gap-4">
-
-                    {/* Totales */}
                     <div className="bg-white rounded-2xl p-4 shadow-sm">
                       <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Total del día</p>
                       <div className="grid grid-cols-4 gap-3">
@@ -394,7 +544,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                       </div>
                     </div>
 
-                    {/* Tiempos */}
                     {items.map((item, index) => {
                       const mt = MEAL_TIMES.find(m => m.key === item.meal_time)
                       const itemKey = item._local_id || item.id
@@ -420,8 +569,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
 
                           {isOpen && (
                             <div className="px-4 pb-4 border-t border-gray-50 pt-3">
-
-                              {/* Equivalentes */}
                               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Equivalentes</p>
                               <div className="grid grid-cols-4 gap-3 mb-4">
                                 {SMAE_GROUPS.map(g => (
@@ -435,9 +582,8 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                                 ))}
                               </div>
 
-                              {/* Sugerencias IA */}
                               {!options && !isLoadingSugg && (
-                                <button onClick={() => getSuggestionOptions(item, index)}
+                                <button onClick={() => getSuggestionOptions(item)}
                                   className="w-full py-2.5 mb-3 bg-violet-50 border border-violet-200 text-violet-700 font-semibold rounded-xl text-sm flex items-center justify-center gap-2">
                                   💡 Pedir opciones de alimentos a IA
                                 </button>
@@ -454,8 +600,8 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                                 <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 mb-3">
                                   <div className="flex justify-between items-center mb-3">
                                     <p className="text-xs font-bold text-violet-700 uppercase tracking-widest">💡 Selecciona alimentos</p>
-                                    <button onClick={() => { setSuggestionOptions(prev => { const n={...prev}; delete n[itemKey]; return n }) }}
-                                      className="text-xs text-gray-400">✕ Cerrar</button>
+                                    <button onClick={() => setSuggestionOptions(prev => { const n={...prev}; delete n[itemKey]; return n })}
+                                      className="text-xs text-gray-400">✕</button>
                                   </div>
 
                                   {options.advertencia && (
@@ -499,9 +645,7 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                                     ))}
                                   </div>
 
-                                  <button
-                                    onClick={() => generateRecipe(item, index)}
-                                    disabled={isLoadingRec}
+                                  <button onClick={() => generateRecipe(item, index)} disabled={isLoadingRec}
                                     className="w-full py-3 bg-violet-600 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2">
                                     {isLoadingRec ? (
                                       <>
@@ -513,7 +657,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                                 </div>
                               )}
 
-                              {/* Receta para el paciente */}
                               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Receta para el paciente</p>
                               <textarea
                                 placeholder="Escribe o ajusta la receta que verá el paciente..."
@@ -531,7 +674,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                       )
                     })}
 
-                    {/* Agregar */}
                     <div className="bg-white rounded-2xl p-4 shadow-sm">
                       <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Agregar tiempo de comida</p>
                       <div className="flex flex-wrap gap-2">
