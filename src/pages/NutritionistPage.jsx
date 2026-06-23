@@ -145,31 +145,36 @@ export default function NutritionistPage({ profile }) {
     }
   }
 
-  async function selectPatient(patient) {
-    setSelectedPatient(patient)
-    setClinicalProfile({
-      alergias: patient.alergias || '',
-      condiciones: patient.condiciones || '',
-      notas_clinicas: patient.notas_clinicas || ''
-    })
-    setTab('plan')
-    setSubTab('perfil')
-    setItems([])
-    setPlan(null)
-    setActiveItem(null)
-    setSuggestionOptions({})
-    setSelectedOptions({})
-    const { data: planData } = await supabase
-      .from('meal_plans').select('*')
-      .eq('patient_id', patient.id).eq('active', true).maybeSingle()
-    if (planData) {
-      setPlan(planData)
-      const { data: itemsData } = await supabase
-        .from('meal_plan_items').select('*')
-        .eq('meal_plan_id', planData.id).order('sort_order')
-      setItems(itemsData || [])
-    }
+ async function selectPatient(patient) {
+  setSelectedPatient(patient)
+  setTab('plan')
+  setSubTab('perfil')
+  setItems([])
+  setPlan(null)
+  setActiveItem(null)
+  setSuggestionOptions({})
+  setSelectedOptions({})
+
+  // Cargar perfil clínico fresco desde Supabase
+  const { data: freshProfile } = await supabase
+    .from('profiles').select('*').eq('id', patient.id).single()
+  setClinicalProfile({
+    alergias: freshProfile?.alergias || '',
+    condiciones: freshProfile?.condiciones || '',
+    notas_clinicas: freshProfile?.notas_clinicas || ''
+  })
+
+  const { data: planData } = await supabase
+    .from('meal_plans').select('*')
+    .eq('patient_id', patient.id).eq('active', true).maybeSingle()
+  if (planData) {
+    setPlan(planData)
+    const { data: itemsData } = await supabase
+      .from('meal_plan_items').select('*')
+      .eq('meal_plan_id', planData.id).order('sort_order')
+    setItems(itemsData || [])
   }
+}
 
   async function saveClinicalProfile() {
     setSavingProfile(true)
