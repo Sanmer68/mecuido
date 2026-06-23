@@ -13,10 +13,10 @@ exports.handler = async (event) => {
 
   const { email, password, profile } = JSON.parse(event.body)
 
- const SUPABASE_URL = process.env.SUPABASE_URL
+  const SUPABASE_URL = process.env.SUPABASE_URL
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY
 
-  // 1. Crear usuario en auth
+  // 1. Crear usuario
   const authRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
     method: 'POST',
     headers: {
@@ -62,9 +62,29 @@ exports.handler = async (event) => {
     }
   }
 
+  // 3. Generar magic link
+  const linkRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${authData.id}/links`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SERVICE_KEY,
+      'Authorization': `Bearer ${SERVICE_KEY}`
+    },
+    body: JSON.stringify({
+      type: 'magiclink',
+      redirect_to: 'https://mecuido.hablame.io'
+    })
+  })
+
+  const linkData = await linkRes.json()
+
   return {
     statusCode: 200,
     headers: { 'Access-Control-Allow-Origin': '*' },
-    body: JSON.stringify({ success: true, user_id: authData.id })
+    body: JSON.stringify({
+      success: true,
+      user_id: authData.id,
+      magic_link: linkData.action_link || null
+    })
   }
 }
