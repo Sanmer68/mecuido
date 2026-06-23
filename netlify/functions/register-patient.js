@@ -63,7 +63,7 @@ exports.handler = async (event) => {
   }
 
   // 3. Generar magic link
-  const linkRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${authData.id}/links`, {
+  const linkRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/generate_link`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -72,19 +72,8 @@ exports.handler = async (event) => {
     },
     body: JSON.stringify({
       type: 'magiclink',
-      redirect_to: 'https://mecuido.hablame.io'
+      email: email
     })
   })
 
   const linkData = await linkRes.json()
-
-  return {
-    statusCode: 200,
-    headers: { 'Access-Control-Allow-Origin': '*' },
-    body: JSON.stringify({
-      success: true,
-      user_id: authData.id,
-      magic_link: linkData.action_link || null
-    })
-  }
-}
