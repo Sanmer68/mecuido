@@ -78,12 +78,11 @@ export default function NutritionistPage({ profile }) {
   const [selectedOptions, setSelectedOptions] = useState({})
   const [loadingSuggestion, setLoadingSuggestion] = useState(null)
   const [loadingRecipe, setLoadingRecipe] = useState(null)
-
-  // Nuevo paciente
   const [showNewPatient, setShowNewPatient] = useState(false)
   const [patientForm, setPatientForm] = useState(emptyPatientForm())
   const [savingPatient, setSavingPatient] = useState(false)
   const [patientError, setPatientError] = useState('')
+  const [magicLinkData, setMagicLinkData] = useState(null)
 
   useEffect(() => { loadPatients() }, [])
 
@@ -101,9 +100,7 @@ export default function NutritionistPage({ profile }) {
     }
     setSavingPatient(true)
     setPatientError('')
-
     const calories = calcCalories(patientForm)
-
     try {
       const res = await fetch('/.netlify/functions/register-patient', {
         method: 'POST',
@@ -125,20 +122,23 @@ export default function NutritionistPage({ profile }) {
           }
         })
       })
-
       const data = await res.json()
-
       if (data.error) {
         setPatientError(data.error)
         setSavingPatient(false)
         return
       }
-
       setSavingPatient(false)
-      setShowNewPatient(false)
-      setPatientForm(emptyPatientForm())
-      await loadPatients()
-
+      if (data.magic_link) {
+        const nombre = patientForm.full_name.split(' ')[0]
+        const mensaje = `Hola ${nombre} 👋 Tu nutriólogo te ha registrado en MeCuido. Haz click en este link para entrar a tu plan de alimentación: ${data.magic_link}`
+        const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(mensaje)}`
+        setMagicLinkData({ link: data.magic_link, whatsapp: whatsappUrl, nombre })
+      } else {
+        setShowNewPatient(false)
+        setPatientForm(emptyPatientForm())
+        await loadPatients()
+      }
     } catch (e) {
       setPatientError('Error al registrar. Intenta de nuevo.')
       setSavingPatient(false)
@@ -159,11 +159,9 @@ export default function NutritionistPage({ profile }) {
     setActiveItem(null)
     setSuggestionOptions({})
     setSelectedOptions({})
-
     const { data: planData } = await supabase
       .from('meal_plans').select('*')
       .eq('patient_id', patient.id).eq('active', true).maybeSingle()
-
     if (planData) {
       setPlan(planData)
       const { data: itemsData } = await supabase
@@ -220,43 +218,22 @@ export default function NutritionistPage({ profile }) {
   async function getSuggestionOptions(item) {
     const itemKey = item._local_id || item.id
     setLoadingSuggestion(itemKey)
-
     const grupos = SMAE_GROUPS
       .filter(g => parseFloat(item[g.key]) > 0)
       .map(g => `{"grupo":"${g.label}","cantidad":${item[g.key]}}`)
       .join(',')
-
     const contexto = [
       clinicalProfile.alergias ? `Alergias: ${clinicalProfile.alergias}` : '',
       clinicalProfile.condiciones ? `Condiciones: ${clinicalProfile.condiciones}` : '',
       clinicalProfile.notas_clinicas ? `Notas: ${clinicalProfile.notas_clinicas}` : '',
     ].filter(Boolean).join('. ')
-
     try {
       const text = await callClaude(`Eres experto en SMAE (Sistema Mexicano de Alimentos Equivalentes).
-
 Para el tiempo "${item.meal_time_label}" con estos equivalentes: [${grupos}].
 Perfil del paciente: ${contexto || 'Sin restricciones'}.
-
 Devuelve SOLO un JSON sin backticks con esta estructura exacta:
-{
-  "advertencia": "texto si hay restricción crítica o null",
-  "grupos": [
-    {
-      "grupo": "Verdura",
-      "icono": "🥦",
-      "cantidad": 0.5,
-      "opciones": [
-        {"nombre": "Jitomate", "cantidad": "½ mediano", "gramos": 90, "apto": true},
-        {"nombre": "Cebolla", "cantidad": "¼ taza", "gramos": 40, "apto": true},
-        {"nombre": "Espinaca", "cantidad": "1 taza", "gramos": 30, "apto": true},
-        {"nombre": "Calabacita", "cantidad": "½ pieza", "gramos": 80, "apto": true}
-      ]
-    }
-  ]
-}
+{"advertencia": "texto si hay restricción crítica o null","grupos": [{"grupo": "Verdura","icono": "🥦","cantidad": 0.5,"opciones": [{"nombre": "Jitomate","cantidad": "½ mediano","gramos": 90,"apto": true},{"nombre": "Cebolla","cantidad": "¼ taza","gramos": 40,"apto": true},{"nombre": "Espinaca","cantidad": "1 taza","gramos": 30,"apto": true},{"nombre": "Calabacita","cantidad": "½ pieza","gramos": 80,"apto": true}]}]}
 Da exactamente 4 opciones por grupo. Marca apto:false si no es recomendable para el perfil del paciente.`)
-
       const clean = text.replace(/```json|```/g, '').trim()
       const parsed = JSON.parse(clean)
       setSuggestionOptions(prev => ({ ...prev, [itemKey]: parsed }))
@@ -277,24 +254,18 @@ Da exactamente 4 opciones por grupo. Marca apto:false si no es recomendable para
     const selected = selectedOptions[itemKey]
     if (!selected) return
     setLoadingRecipe(itemKey)
-
     const seleccionados = Object.entries(selected)
       .map(([grupo, opcion]) => `${grupo}: ${opcion.nombre} ${opcion.cantidad} (${opcion.gramos}g)`)
       .join(', ')
-
     const contexto = [
       clinicalProfile.alergias ? `Alergias: ${clinicalProfile.alergias}` : '',
       clinicalProfile.condiciones ? `Condiciones: ${clinicalProfile.condiciones}` : '',
       clinicalProfile.notas_clinicas ? `Notas: ${clinicalProfile.notas_clinicas}` : '',
     ].filter(Boolean).join('. ')
-
     try {
       const text = await callClaude(`Eres nutriólogo experto. El paciente tiene: ${contexto || 'sin restricciones'}.
-
 Para el ${item.meal_time_label} se seleccionaron: ${seleccionados}.
-
 Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTAMENTE esos ingredientes y cantidades. Incluye preparación breve. Tono amigable. Máximo 80 palabras. Solo la receta, sin formato markdown, sin asteriscos, sin hashtags.`)
-
       updateItem(index, 'recipe_text', text)
       setSuggestionOptions(prev => { const n = {...prev}; delete n[itemKey]; return n })
       setSelectedOptions(prev => { const n = {...prev}; delete n[itemKey]; return n })
@@ -341,6 +312,32 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+
+      {/* Modal magic link */}
+      {magicLinkData && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full">
+            <p className="text-4xl text-center mb-3">✅</p>
+            <p className="font-bold text-gray-900 text-center text-lg mb-1">Paciente registrado</p>
+            <p className="text-sm text-gray-500 text-center mb-5">
+              Comparte el link de acceso con {magicLinkData.nombre} por WhatsApp
+            </p>
+            <a href={magicLinkData.whatsapp} target="_blank" rel="noreferrer"
+              className="flex items-center justify-center gap-2 w-full py-3 bg-green-500 text-white font-bold rounded-xl text-sm mb-3">
+              📱 Enviar por WhatsApp
+            </a>
+            <button onClick={() => {
+              setMagicLinkData(null)
+              setShowNewPatient(false)
+              setPatientForm(emptyPatientForm())
+              loadPatients()
+            }} className="w-full py-3 bg-gray-100 text-gray-600 font-semibold rounded-xl text-sm">
+              Listo
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white border-b border-gray-100 px-4 py-3 flex justify-between items-center sticky top-0 z-10">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-emerald-700 rounded-xl flex items-center justify-center text-lg">🥗</div>
@@ -354,24 +351,21 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
 
       <div className="flex-1 max-w-2xl mx-auto w-full px-4 pt-5 pb-10">
 
-        {/* PACIENTES */}
         {tab === 'pacientes' && !showNewPatient && (
           <div>
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold text-gray-900">Mis pacientes</h2>
               <button onClick={() => setShowNewPatient(true)}
-                className="px-4 py-2 bg-emerald-700 text-white font-bold rounded-xl text-sm flex items-center gap-1">
+                className="px-4 py-2 bg-emerald-700 text-white font-bold rounded-xl text-sm">
                 + Agregar
               </button>
             </div>
-
             {loading ? (
               <p className="text-gray-400 text-center py-10">Cargando...</p>
             ) : patients.length === 0 ? (
               <div className="bg-white rounded-2xl p-10 text-center shadow-sm">
                 <p className="text-3xl mb-2">👤</p>
                 <p className="font-bold text-gray-400">Sin pacientes registrados</p>
-                <p className="text-sm text-gray-300 mt-1">Agrega tu primer paciente</p>
               </div>
             ) : (
               <div className="flex flex-col gap-3">
@@ -393,7 +387,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
           </div>
         )}
 
-        {/* NUEVO PACIENTE */}
         {showNewPatient && (
           <div>
             <button onClick={() => { setShowNewPatient(false); setPatientError('') }}
@@ -401,13 +394,11 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
               ← Pacientes
             </button>
             <h2 className="text-lg font-bold text-gray-900 mb-4">Nuevo paciente</h2>
-
             {patientError && (
               <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4">
                 <p className="text-red-600 text-sm">{patientError}</p>
               </div>
             )}
-
             <div className="flex flex-col gap-4">
               <div className="bg-white rounded-2xl p-4 shadow-sm flex flex-col gap-3">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Datos de acceso</p>
@@ -418,7 +409,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                 <input type="password" placeholder="Contraseña temporal *" value={patientForm.password}
                   onChange={e => setPatientForm({...patientForm, password: e.target.value})} className={inpCls}/>
               </div>
-
               <div className="bg-white rounded-2xl p-4 shadow-sm flex flex-col gap-3">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Datos físicos</p>
                 <div className="grid grid-cols-2 gap-3">
@@ -434,7 +424,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                   <option value="male">Hombre</option>
                 </select>
               </div>
-
               <div className="bg-white rounded-2xl p-4 shadow-sm flex flex-col gap-3">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Objetivo</p>
                 <select value={patientForm.activity_level} onChange={e => setPatientForm({...patientForm, activity_level: e.target.value})} className={selCls}>
@@ -448,7 +437,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                   <option value="maintain">Mantener peso</option>
                   <option value="gain">Subir masa muscular</option>
                 </select>
-
                 {patientForm.weight_kg && patientForm.height_cm && patientForm.age && (
                   <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
                     <p className="text-xs text-gray-500 mb-1">Meta calórica calculada</p>
@@ -456,7 +444,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                   </div>
                 )}
               </div>
-
               <button onClick={registerPatient} disabled={savingPatient}
                 className="w-full py-4 bg-emerald-700 text-white font-bold rounded-2xl shadow-md text-base">
                 {savingPatient ? 'Registrando...' : 'Registrar paciente ✓'}
@@ -465,21 +452,18 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
           </div>
         )}
 
-        {/* PLAN */}
         {tab === 'plan' && selectedPatient && (
           <div>
             <button onClick={() => { setTab('pacientes'); setSelectedPatient(null) }}
               className="text-emerald-700 text-sm font-semibold mb-4 flex items-center gap-1">
               ← Pacientes
             </button>
-
             <div className="bg-white rounded-2xl p-4 shadow-sm mb-4">
               <p className="font-bold text-gray-900">{selectedPatient.full_name}</p>
               <p className="text-xs text-gray-400 mt-0.5">
                 {selectedPatient.daily_calories} kcal/día · {selectedPatient.goal === 'lose' ? 'Bajar peso' : selectedPatient.goal === 'gain' ? 'Subir masa muscular' : 'Mantener peso'}
               </p>
             </div>
-
             <div className="flex gap-2 mb-4 bg-gray-100 p-1 rounded-xl">
               {[
                 { id: 'perfil', label: '🩺 Perfil clínico' },
@@ -554,7 +538,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                       const selected = selectedOptions[itemKey] || {}
                       const isLoadingSugg = loadingSuggestion === itemKey
                       const isLoadingRec = loadingRecipe === itemKey
-
                       return (
                         <div key={itemKey} className="bg-white rounded-2xl shadow-sm overflow-hidden">
                           <button onClick={() => setActiveItem(isOpen ? null : itemKey)}
@@ -568,7 +551,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                             </div>
                             <span className="text-gray-400 text-sm">{isOpen ? '▲' : '▼'}</span>
                           </button>
-
                           {isOpen && (
                             <div className="px-4 pb-4 border-t border-gray-50 pt-3">
                               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Equivalentes</p>
@@ -583,21 +565,18 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                                   </div>
                                 ))}
                               </div>
-
                               {!options && !isLoadingSugg && (
                                 <button onClick={() => getSuggestionOptions(item)}
                                   className="w-full py-2.5 mb-3 bg-violet-50 border border-violet-200 text-violet-700 font-semibold rounded-xl text-sm flex items-center justify-center gap-2">
                                   💡 Pedir opciones de alimentos a IA
                                 </button>
                               )}
-
                               {isLoadingSugg && (
                                 <div className="bg-violet-50 rounded-xl p-4 text-center mb-3">
                                   <div className="w-6 h-6 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" style={{borderWidth:2,borderStyle:'solid'}}/>
                                   <p className="text-sm text-violet-600 font-medium">Generando opciones personalizadas...</p>
                                 </div>
                               )}
-
                               {options && (
                                 <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 mb-3">
                                   <div className="flex justify-between items-center mb-3">
@@ -605,13 +584,11 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                                     <button onClick={() => setSuggestionOptions(prev => { const n={...prev}; delete n[itemKey]; return n })}
                                       className="text-xs text-gray-400">✕</button>
                                   </div>
-
                                   {options.advertencia && (
                                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 mb-3">
                                       <p className="text-xs text-amber-700 font-semibold">⚠️ {options.advertencia}</p>
                                     </div>
                                   )}
-
                                   <div className="flex flex-col gap-4 mb-4">
                                     {options.grupos.map(grupo => (
                                       <div key={grupo.grupo}>
@@ -646,7 +623,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                                       </div>
                                     ))}
                                   </div>
-
                                   <button onClick={() => generateRecipe(item, index)} disabled={isLoadingRec}
                                     className="w-full py-3 bg-violet-600 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2">
                                     {isLoadingRec ? (
@@ -658,7 +634,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                                   </button>
                                 </div>
                               )}
-
                               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Receta para el paciente</p>
                               <textarea
                                 placeholder="Escribe o ajusta la receta que verá el paciente..."
