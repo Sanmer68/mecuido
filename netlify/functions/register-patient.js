@@ -71,9 +71,10 @@ exports.handler = async (event) => {
       'Authorization': `Bearer ${SERVICE_KEY}`
     },
     body: JSON.stringify({
-      type: 'magiclink',
-      email: email
-    })
+  type: 'magiclink',
+  email: email,
+  redirect_to: 'https://mecuido.hablame.io'
+})
   })
 
   const linkData = await linkRes.json()
