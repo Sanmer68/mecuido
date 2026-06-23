@@ -77,3 +77,14 @@ exports.handler = async (event) => {
   })
 
   const linkData = await linkRes.json()
+
+  return {
+    statusCode: 200,
+    headers: { 'Access-Control-Allow-Origin': '*' },
+    body: JSON.stringify({
+      success: true,
+      user_id: authData.id,
+      magic_link: linkData.action_link || null
+    })
+  }
+}
