@@ -28,7 +28,7 @@ const emptyItem = () => ({
 })
 
 const emptyPatientForm = () => ({
-  full_name: '', email: '', password: '',
+  full_name: '', email: '', phone: '',
   weight_kg: '', height_cm: '', age: '', sex: 'female',
   activity_level: 'moderate', goal: 'maintain'
 })
@@ -94,8 +94,8 @@ export default function NutritionistPage({ profile }) {
   }
 
   async function registerPatient() {
-    if (!patientForm.full_name || !patientForm.email || !patientForm.password) {
-      setPatientError('Nombre, correo y contraseña son obligatorios')
+    if (!patientForm.full_name || !patientForm.email || !patientForm.phone) {
+      setPatientError('Nombre, correo y teléfono son obligatorios')
       return
     }
     setSavingPatient(true)
@@ -107,7 +107,6 @@ export default function NutritionistPage({ profile }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: patientForm.email,
-          password: patientForm.password,
           profile: {
             full_name: patientForm.full_name,
             email: patientForm.email,
@@ -132,7 +131,8 @@ export default function NutritionistPage({ profile }) {
       if (data.magic_link) {
         const nombre = patientForm.full_name.split(' ')[0]
         const mensaje = `Hola ${nombre} 👋 Tu nutriólogo te ha registrado en MeCuido. Haz click en este link para entrar a tu plan de alimentación: ${data.magic_link}`
-        const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(mensaje)}`
+        const phone = patientForm.phone.replace(/\D/g, '')
+        const whatsappUrl = `https://wa.me/52${phone}?text=${encodeURIComponent(mensaje)}`
         setMagicLinkData({ link: data.magic_link, whatsapp: whatsappUrl, nombre })
       } else {
         setShowNewPatient(false)
@@ -145,36 +145,33 @@ export default function NutritionistPage({ profile }) {
     }
   }
 
- async function selectPatient(patient) {
-  setSelectedPatient(patient)
-  setTab('plan')
-  setSubTab('perfil')
-  setItems([])
-  setPlan(null)
-  setActiveItem(null)
-  setSuggestionOptions({})
-  setSelectedOptions({})
-
-  // Cargar perfil clínico fresco desde Supabase
-  const { data: freshProfile } = await supabase
-    .from('profiles').select('*').eq('id', patient.id).single()
-  setClinicalProfile({
-    alergias: freshProfile?.alergias || '',
-    condiciones: freshProfile?.condiciones || '',
-    notas_clinicas: freshProfile?.notas_clinicas || ''
-  })
-
-  const { data: planData } = await supabase
-    .from('meal_plans').select('*')
-    .eq('patient_id', patient.id).eq('active', true).maybeSingle()
-  if (planData) {
-    setPlan(planData)
-    const { data: itemsData } = await supabase
-      .from('meal_plan_items').select('*')
-      .eq('meal_plan_id', planData.id).order('sort_order')
-    setItems(itemsData || [])
+  async function selectPatient(patient) {
+    setSelectedPatient(patient)
+    setTab('plan')
+    setSubTab('perfil')
+    setItems([])
+    setPlan(null)
+    setActiveItem(null)
+    setSuggestionOptions({})
+    setSelectedOptions({})
+    const { data: freshProfile } = await supabase
+      .from('profiles').select('*').eq('id', patient.id).single()
+    setClinicalProfile({
+      alergias: freshProfile?.alergias || '',
+      condiciones: freshProfile?.condiciones || '',
+      notas_clinicas: freshProfile?.notas_clinicas || ''
+    })
+    const { data: planData } = await supabase
+      .from('meal_plans').select('*')
+      .eq('patient_id', patient.id).eq('active', true).maybeSingle()
+    if (planData) {
+      setPlan(planData)
+      const { data: itemsData } = await supabase
+        .from('meal_plan_items').select('*')
+        .eq('meal_plan_id', planData.id).order('sort_order')
+      setItems(itemsData || [])
+    }
   }
-}
 
   async function saveClinicalProfile() {
     setSavingProfile(true)
@@ -318,7 +315,6 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
 
-      {/* Modal magic link */}
       {magicLinkData && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full">
@@ -411,8 +407,8 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                   onChange={e => setPatientForm({...patientForm, full_name: e.target.value})} className={inpCls}/>
                 <input type="email" placeholder="Correo electrónico *" value={patientForm.email}
                   onChange={e => setPatientForm({...patientForm, email: e.target.value})} className={inpCls}/>
-                <input type="password" placeholder="Contraseña temporal *" value={patientForm.password}
-                  onChange={e => setPatientForm({...patientForm, password: e.target.value})} className={inpCls}/>
+                <input type="tel" placeholder="Teléfono WhatsApp (ej: 9981234567) *" value={patientForm.phone}
+                  onChange={e => setPatientForm({...patientForm, phone: e.target.value})} className={inpCls}/>
               </div>
               <div className="bg-white rounded-2xl p-4 shadow-sm flex flex-col gap-3">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Datos físicos</p>
