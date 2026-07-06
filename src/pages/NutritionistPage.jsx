@@ -24,7 +24,7 @@ const emptyItem = () => ({
   meal_time: '', meal_time_label: '',
   verdura: 0, fruta: 0, cereal: 0, leguminosa: 0,
   aoa: 0, grasa: 0, leche: 0, azucar: 0,
-  recipe_text: '', sort_order: 0
+  food_options: {}, sort_order: 0
 })
 
 const emptyPatientForm = () => ({
@@ -39,7 +39,7 @@ async function callClaude(prompt) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1000,
+      max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }]
     })
   })
@@ -74,10 +74,8 @@ export default function NutritionistPage({ profile }) {
   const [saving, setSaving] = useState(false)
   const [activeItem, setActiveItem] = useState(null)
   const [subTab, setSubTab] = useState('perfil')
-  const [suggestionOptions, setSuggestionOptions] = useState({})
-  const [selectedOptions, setSelectedOptions] = useState({})
-  const [loadingSuggestion, setLoadingSuggestion] = useState(null)
-  const [loadingRecipe, setLoadingRecipe] = useState(null)
+  const [loadingAI, setLoadingAI] = useState(null)
+  const [newOptionText, setNewOptionText] = useState({})
   const [showNewPatient, setShowNewPatient] = useState(false)
   const [patientForm, setPatientForm] = useState(emptyPatientForm())
   const [savingPatient, setSavingPatient] = useState(false)
@@ -152,8 +150,6 @@ export default function NutritionistPage({ profile }) {
     setItems([])
     setPlan(null)
     setActiveItem(null)
-    setSuggestionOptions({})
-    setSelectedOptions({})
     const { data: freshProfile } = await supabase
       .from('profiles').select('*').eq('id', patient.id).single()
     setClinicalProfile({
@@ -217,12 +213,33 @@ export default function NutritionistPage({ profile }) {
     setActiveItem(null)
   }
 
-  async function getSuggestionOptions(item) {
+  function addFoodOption(index, groupKey, text) {
+    if (!text.trim()) return
+    const item = items[index]
+    const current = item.food_options?.[groupKey] || []
+    updateItem(index, 'food_options', {
+      ...item.food_options,
+      [groupKey]: [...current, text.trim()]
+    })
+    setNewOptionText(prev => ({ ...prev, [`${index}-${groupKey}`]: '' }))
+  }
+
+  function removeFoodOption(index, groupKey, optIndex) {
+    const item = items[index]
+    const current = [...(item.food_options?.[groupKey] || [])]
+    current.splice(optIndex, 1)
+    updateItem(index, 'food_options', {
+      ...item.food_options,
+      [groupKey]: current
+    })
+  }
+
+  async function suggestFoodOptions(item, index) {
     const itemKey = item._local_id || item.id
-    setLoadingSuggestion(itemKey)
+    setLoadingAI(itemKey)
     const grupos = SMAE_GROUPS
       .filter(g => parseFloat(item[g.key]) > 0)
-      .map(g => `{"grupo":"${g.label}","cantidad":${item[g.key]}}`)
+      .map(g => `{"grupo":"${g.label}","key":"${g.key}","cantidad":${item[g.key]}}`)
       .join(',')
     const contexto = [
       clinicalProfile.alergias ? `Alergias: ${clinicalProfile.alergias}` : '',
@@ -230,51 +247,24 @@ export default function NutritionistPage({ profile }) {
       clinicalProfile.notas_clinicas ? `Notas: ${clinicalProfile.notas_clinicas}` : '',
     ].filter(Boolean).join('. ')
     try {
-      const text = await callClaude(`Eres experto en SMAE (Sistema Mexicano de Alimentos Equivalentes).
-Para el tiempo "${item.meal_time_label}" con estos equivalentes: [${grupos}].
+      const text = await callClaude(`Eres experto en SMAE mexicano. Para el tiempo "${item.meal_time_label}" con estos equivalentes: [${grupos}].
 Perfil del paciente: ${contexto || 'Sin restricciones'}.
-Devuelve SOLO un JSON sin backticks con esta estructura exacta:
-{"advertencia": "texto si hay restricción crítica o null","grupos": [{"grupo": "Verdura","icono": "🥦","cantidad": 0.5,"opciones": [{"nombre": "Jitomate","cantidad": "½ mediano","gramos": 90,"apto": true},{"nombre": "Cebolla","cantidad": "¼ taza","gramos": 40,"apto": true},{"nombre": "Espinaca","cantidad": "1 taza","gramos": 30,"apto": true},{"nombre": "Calabacita","cantidad": "½ pieza","gramos": 80,"apto": true}]}]}
-Da exactamente 4 opciones por grupo. Marca apto:false si no es recomendable para el perfil del paciente.`)
+Devuelve SOLO un JSON sin backticks ni markdown con esta estructura:
+{"grupos":[{"key":"verdura","opciones":["2 tazas hoja verde (espinaca, acelga, kale, col)","1 pieza: calabacita, jitomate, pimiento, pepino","1/2 taza champiñón, jícama de agua, zanahoria","1 taza nopal, brócoli, coliflor"]}]}
+Da 6 opciones por grupo. Cada opción debe incluir cantidad exacta y nombres de alimentos equivalentes separados por coma. Solo incluye grupos con cantidad > 0.`)
       const clean = text.replace(/```json|```/g, '').trim()
       const parsed = JSON.parse(clean)
-      setSuggestionOptions(prev => ({ ...prev, [itemKey]: parsed }))
-      const initSelected = {}
+      const updated = { ...item.food_options }
       parsed.grupos.forEach(g => {
-        const primera = g.opciones.find(o => o.apto)
-        if (primera) initSelected[g.grupo] = primera
+        const existing = updated[g.key] || []
+        const newOpts = g.opciones.filter(o => !existing.includes(o))
+        updated[g.key] = [...existing, ...newOpts]
       })
-      setSelectedOptions(prev => ({ ...prev, [itemKey]: initSelected }))
+      updateItem(index, 'food_options', updated)
     } catch (e) {
-      alert('Error al generar sugerencias.')
+      alert('Error al generar opciones con IA.')
     }
-    setLoadingSuggestion(null)
-  }
-
-  async function generateRecipe(item, index) {
-    const itemKey = item._local_id || item.id
-    const selected = selectedOptions[itemKey]
-    if (!selected) return
-    setLoadingRecipe(itemKey)
-    const seleccionados = Object.entries(selected)
-      .map(([grupo, opcion]) => `${grupo}: ${opcion.nombre} ${opcion.cantidad} (${opcion.gramos}g)`)
-      .join(', ')
-    const contexto = [
-      clinicalProfile.alergias ? `Alergias: ${clinicalProfile.alergias}` : '',
-      clinicalProfile.condiciones ? `Condiciones: ${clinicalProfile.condiciones}` : '',
-      clinicalProfile.notas_clinicas ? `Notas: ${clinicalProfile.notas_clinicas}` : '',
-    ].filter(Boolean).join('. ')
-    try {
-      const text = await callClaude(`Eres nutriólogo experto. El paciente tiene: ${contexto || 'sin restricciones'}.
-Para el ${item.meal_time_label} se seleccionaron: ${seleccionados}.
-Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTAMENTE esos ingredientes y cantidades. Incluye preparación breve. Tono amigable. Máximo 80 palabras. Solo la receta, sin formato markdown, sin asteriscos, sin hashtags.`)
-      updateItem(index, 'recipe_text', text)
-      setSuggestionOptions(prev => { const n = {...prev}; delete n[itemKey]; return n })
-      setSelectedOptions(prev => { const n = {...prev}; delete n[itemKey]; return n })
-    } catch (e) {
-      alert('Error al generar receta.')
-    }
-    setLoadingRecipe(null)
+    setLoadingAI(null)
   }
 
   async function savePlan() {
@@ -293,7 +283,7 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
       grasa: parseFloat(item.grasa) || 0,
       leche: parseFloat(item.leche) || 0,
       azucar: parseFloat(item.azucar) || 0,
-      recipe_text: item.recipe_text || '',
+      food_options: item.food_options || {},
       sort_order: i
     }))
     if (toInsert.length > 0) await supabase.from('meal_plan_items').insert(toInsert)
@@ -535,10 +525,9 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                       const mt = MEAL_TIMES.find(m => m.key === item.meal_time)
                       const itemKey = item._local_id || item.id
                       const isOpen = activeItem === itemKey
-                      const options = suggestionOptions[itemKey]
-                      const selected = selectedOptions[itemKey] || {}
-                      const isLoadingSugg = loadingSuggestion === itemKey
-                      const isLoadingRec = loadingRecipe === itemKey
+                      const isLoadingAI = loadingAI === itemKey
+                      const activeGroups = SMAE_GROUPS.filter(g => parseFloat(item[g.key]) > 0)
+
                       return (
                         <div key={itemKey} className="bg-white rounded-2xl shadow-sm overflow-hidden">
                           <button onClick={() => setActiveItem(isOpen ? null : itemKey)}
@@ -547,15 +536,17 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                               <span className="text-lg">{mt?.icon}</span>
                               <span className="font-bold text-gray-900">{item.meal_time_label}</span>
                               <span className="text-xs text-gray-400">
-                                {SMAE_GROUPS.filter(g => parseFloat(item[g.key]) > 0).map(g => `${item[g.key]} ${g.label}`).join(' · ')}
+                                {activeGroups.map(g => `${item[g.key]} ${g.label}`).join(' · ')}
                               </span>
                             </div>
                             <span className="text-gray-400 text-sm">{isOpen ? '▲' : '▼'}</span>
                           </button>
+
                           {isOpen && (
                             <div className="px-4 pb-4 border-t border-gray-50 pt-3">
+                              {/* Equivalentes */}
                               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Equivalentes</p>
-                              <div className="grid grid-cols-4 gap-3 mb-4">
+                              <div className="grid grid-cols-4 gap-3 mb-5">
                                 {SMAE_GROUPS.map(g => (
                                   <div key={g.key} className="text-center">
                                     <p className="text-base mb-1">{g.icon}</p>
@@ -566,84 +557,60 @@ Escribe una receta práctica y apetitosa para el paciente mexicano usando EXACTA
                                   </div>
                                 ))}
                               </div>
-                              {!options && !isLoadingSugg && (
-                                <button onClick={() => getSuggestionOptions(item)}
-                                  className="w-full py-2.5 mb-3 bg-violet-50 border border-violet-200 text-violet-700 font-semibold rounded-xl text-sm flex items-center justify-center gap-2">
-                                  💡 Pedir opciones de alimentos a IA
+
+                              {/* Opciones de alimentos */}
+                              <div className="flex justify-between items-center mb-3">
+                                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Opciones de alimentos</p>
+                                <button
+                                  onClick={() => suggestFoodOptions(item, index)}
+                                  disabled={isLoadingAI}
+                                  className="flex items-center gap-1 px-3 py-1.5 bg-violet-50 border border-violet-200 text-violet-700 font-semibold rounded-lg text-xs">
+                                  {isLoadingAI ? (
+                                    <><div className="w-3 h-3 border-violet-500 border-t-transparent rounded-full animate-spin" style={{borderWidth:2,borderStyle:'solid'}}/> Generando...</>
+                                  ) : '💡 Sugerir con IA'}
                                 </button>
-                              )}
-                              {isLoadingSugg && (
-                                <div className="bg-violet-50 rounded-xl p-4 text-center mb-3">
-                                  <div className="w-6 h-6 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" style={{borderWidth:2,borderStyle:'solid'}}/>
-                                  <p className="text-sm text-violet-600 font-medium">Generando opciones personalizadas...</p>
-                                </div>
-                              )}
-                              {options && (
-                                <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 mb-3">
-                                  <div className="flex justify-between items-center mb-3">
-                                    <p className="text-xs font-bold text-violet-700 uppercase tracking-widest">💡 Selecciona alimentos</p>
-                                    <button onClick={() => setSuggestionOptions(prev => { const n={...prev}; delete n[itemKey]; return n })}
-                                      className="text-xs text-gray-400">✕</button>
-                                  </div>
-                                  {options.advertencia && (
-                                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 mb-3">
-                                      <p className="text-xs text-amber-700 font-semibold">⚠️ {options.advertencia}</p>
-                                    </div>
-                                  )}
-                                  <div className="flex flex-col gap-4 mb-4">
-                                    {options.grupos.map(grupo => (
-                                      <div key={grupo.grupo}>
-                                        <p className="text-xs font-bold text-gray-600 mb-2">{grupo.icono} {grupo.grupo} ({grupo.cantidad} equiv.)</p>
-                                        <div className="flex flex-col gap-1.5">
-                                          {grupo.opciones.map(opcion => {
-                                            const isSelected = selected[grupo.grupo]?.nombre === opcion.nombre
-                                            return (
-                                              <button key={opcion.nombre}
-                                                onClick={() => {
-                                                  if (!opcion.apto) return
-                                                  setSelectedOptions(prev => ({
-                                                    ...prev,
-                                                    [itemKey]: { ...prev[itemKey], [grupo.grupo]: opcion }
-                                                  }))
-                                                }}
-                                                className={`flex justify-between items-center px-3 py-2 rounded-lg text-left text-sm transition ${
-                                                  !opcion.apto
-                                                    ? 'bg-red-50 border border-red-100 text-red-400 cursor-not-allowed opacity-60'
-                                                    : isSelected
-                                                    ? 'bg-violet-600 text-white border border-violet-600'
-                                                    : 'bg-white border border-gray-200 text-gray-700 hover:border-violet-300'
-                                                }`}>
-                                                <span className="font-medium">{opcion.nombre}</span>
-                                                <span className={`text-xs ${isSelected ? 'text-violet-200' : 'text-gray-400'}`}>
-                                                  {opcion.cantidad} · {opcion.gramos}g {!opcion.apto && '· No recomendado'}
-                                                </span>
-                                              </button>
-                                            )
-                                          })}
-                                        </div>
+                              </div>
+
+                              <div className="flex flex-col gap-4 mb-4">
+                                {activeGroups.map(g => {
+                                  const opts = item.food_options?.[g.key] || []
+                                  const inputKey = `${index}-${g.key}`
+                                  return (
+                                    <div key={g.key} className="bg-gray-50 rounded-xl p-3">
+                                      <p className="text-xs font-bold text-gray-600 mb-2">
+                                        {g.icon} {g.label} <span className="text-gray-400 font-normal">({item[g.key]} equiv.)</span>
+                                      </p>
+                                      {opts.length === 0 && (
+                                        <p className="text-xs text-gray-400 mb-2 italic">Sin opciones aún</p>
+                                      )}
+                                      <div className="flex flex-col gap-1.5 mb-2">
+                                        {opts.map((opt, optIdx) => (
+                                          <div key={optIdx} className="flex items-start justify-between bg-white border border-gray-200 rounded-lg px-3 py-2">
+                                            <span className="text-sm text-gray-700 flex-1">• {opt}</span>
+                                            <button onClick={() => removeFoodOption(index, g.key, optIdx)}
+                                              className="text-red-400 text-xs ml-2 font-bold flex-shrink-0">✕</button>
+                                          </div>
+                                        ))}
                                       </div>
-                                    ))}
-                                  </div>
-                                  <button onClick={() => generateRecipe(item, index)} disabled={isLoadingRec}
-                                    className="w-full py-3 bg-violet-600 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2">
-                                    {isLoadingRec ? (
-                                      <>
-                                        <div className="w-4 h-4 border-white border-t-transparent rounded-full animate-spin" style={{borderWidth:2,borderStyle:'solid'}}/>
-                                        Generando receta...
-                                      </>
-                                    ) : '✨ Generar receta con selección'}
-                                  </button>
-                                </div>
-                              )}
-                              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Receta para el paciente</p>
-                              <textarea
-                                placeholder="Escribe o ajusta la receta que verá el paciente..."
-                                value={item.recipe_text}
-                                onChange={e => updateItem(index, 'recipe_text', e.target.value)}
-                                rows={4}
-                                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 outline-none resize-none focus:border-emerald-500"
-                              />
-                              <button onClick={() => removeItem(index)} className="mt-2 text-xs text-red-400 font-semibold">
+                                      <div className="flex gap-2">
+                                        <input
+                                          placeholder="Ej: 1 taza espinaca, acelga..."
+                                          value={newOptionText[inputKey] || ''}
+                                          onChange={e => setNewOptionText(prev => ({ ...prev, [inputKey]: e.target.value }))}
+                                          onKeyDown={e => { if (e.key === 'Enter') addFoodOption(index, g.key, newOptionText[inputKey] || '') }}
+                                          className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm outline-none focus:border-emerald-500"/>
+                                        <button
+                                          onClick={() => addFoodOption(index, g.key, newOptionText[inputKey] || '')}
+                                          className="px-3 py-2 bg-emerald-700 text-white font-bold rounded-lg text-sm">
+                                          +
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+
+                              <button onClick={() => removeItem(index)} className="text-xs text-red-400 font-semibold">
                                 Eliminar este tiempo de comida
                               </button>
                             </div>
