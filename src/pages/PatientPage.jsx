@@ -2,14 +2,14 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
 const SMAE_GROUPS = [
-  { key: 'verdura', label: 'Verdura', icon: '🥦' },
-  { key: 'fruta', label: 'Fruta', icon: '🍎' },
-  { key: 'cereal', label: 'Cereal', icon: '🌽' },
-  { key: 'leguminosa', label: 'Leguminosa', icon: '🥜' },
-  { key: 'aoa', label: 'AOA', icon: '🥩' },
-  { key: 'grasa', label: 'Grasa', icon: '🥑' },
-  { key: 'leche', label: 'Leche', icon: '🥛' },
-  { key: 'azucar', label: 'Azúcar', icon: '🍯' },
+  { key: 'verdura', label: 'Verdura', icon: '🥦', color: 'text-green-600' },
+  { key: 'fruta', label: 'Fruta', icon: '🍎', color: 'text-red-500' },
+  { key: 'cereal', label: 'Cereal', icon: '🌽', color: 'text-yellow-500' },
+  { key: 'leguminosa', label: 'Leguminosa', icon: '🥜', color: 'text-amber-700' },
+  { key: 'aoa', label: 'AOA', icon: '🥩', color: 'text-rose-500' },
+  { key: 'grasa', label: 'Grasa', icon: '🥑', color: 'text-lime-600' },
+  { key: 'leche', label: 'Leche', icon: '🥛', color: 'text-blue-400' },
+  { key: 'azucar', label: 'Azúcar', icon: '🍯', color: 'text-orange-400' },
 ]
 
 const MEAL_TIMES = [
@@ -34,7 +34,6 @@ export default function PatientPage({ profile }) {
     const { data: planData } = await supabase
       .from('meal_plans').select('*')
       .eq('patient_id', profile.id).eq('active', true).maybeSingle()
-
     if (planData) {
       const { data: items } = await supabase
         .from('meal_plan_items').select('*')
@@ -69,7 +68,6 @@ export default function PatientPage({ profile }) {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
 
-      {/* Header */}
       <div className="bg-white border-b border-gray-100 px-4 py-3 flex justify-between items-center sticky top-0 z-10">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-emerald-700 rounded-xl flex items-center justify-center text-lg">🥗</div>
@@ -102,7 +100,7 @@ export default function PatientPage({ profile }) {
               <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex justify-between items-center">
                 <div>
                   <p className="font-bold text-emerald-700 text-sm">Tu plan está listo 📋</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Tu nutriólogo asignó tu plan de hoy</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Tu nutriólogo asignó tu plan</p>
                 </div>
                 <button onClick={() => setTab('plan')}
                   className="px-4 py-2 bg-emerald-700 text-white font-bold rounded-xl text-xs">
@@ -142,7 +140,10 @@ export default function PatientPage({ profile }) {
         {/* MI PLAN */}
         {tab === 'plan' && (
           <div className="flex flex-col gap-3">
-            <h2 className="text-lg font-bold text-gray-900">Mi plan de hoy</h2>
+            <div className="mb-2">
+              <h2 className="text-lg font-bold text-gray-900">Mi plan</h2>
+              <p className="text-xs text-gray-400 mt-0.5">Elige un alimento de cada grupo en cada tiempo de comida</p>
+            </div>
 
             {planItems.length === 0 ? (
               <div className="bg-white rounded-2xl p-10 text-center shadow-sm">
@@ -154,7 +155,9 @@ export default function PatientPage({ profile }) {
               planItems.map(item => {
                 const mt = MEAL_TIMES.find(m => m.key === item.meal_time)
                 const isOpen = activePlanItem === item.id
-                const groups = SMAE_GROUPS.filter(g => parseFloat(item[g.key]) > 0)
+                const activeGroups = SMAE_GROUPS.filter(g => parseFloat(item[g.key]) > 0)
+                const foodOptions = item.food_options || {}
+                const hasOptions = activeGroups.some(g => (foodOptions[g.key] || []).length > 0)
 
                 return (
                   <div key={item.id} className="bg-white rounded-2xl shadow-sm overflow-hidden">
@@ -166,7 +169,7 @@ export default function PatientPage({ profile }) {
                         <div>
                           <p className="font-bold text-gray-900">{item.meal_time_label}</p>
                           <p className="text-xs text-gray-400 mt-0.5">
-                            {groups.map(g => `${item[g.key]} ${g.label}`).join(' · ')}
+                            {activeGroups.map(g => `${item[g.key]} ${g.label}`).join(' · ')}
                           </p>
                         </div>
                       </div>
@@ -174,21 +177,43 @@ export default function PatientPage({ profile }) {
                     </button>
 
                     {isOpen && (
-                      <div className="px-4 pb-4 border-t border-gray-50 pt-3">
-                        <div className="grid grid-cols-4 gap-2 mb-4">
-                          {groups.map(g => (
-                            <div key={g.key} className="bg-gray-50 rounded-xl p-2 text-center">
-                              <p className="text-xl">{g.icon}</p>
-                              <p className="text-base font-extrabold text-emerald-700">{item[g.key]}</p>
-                              <p className="text-xs text-gray-400">{g.label}</p>
-                            </div>
-                          ))}
-                        </div>
+                      <div className="px-4 pb-5 border-t border-gray-50 pt-4">
 
-                        {item.recipe_text && (
-                          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
-                            <p className="text-xs font-bold text-emerald-700 uppercase tracking-widest mb-1">Receta de tu nutriólogo</p>
-                            <p className="text-sm text-gray-700 leading-relaxed">{item.recipe_text}</p>
+                        {hasOptions ? (
+                          <div className="flex flex-col gap-4">
+                            {activeGroups.map(g => {
+                              const opts = foodOptions[g.key] || []
+                              if (opts.length === 0) return null
+                              return (
+                                <div key={g.key}>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-base">{g.icon}</span>
+                                    <p className={`text-xs font-bold uppercase tracking-widest ${g.color}`}>
+                                      {g.label}
+                                    </p>
+                                    <span className="text-xs text-gray-400">({item[g.key]} equiv.)</span>
+                                  </div>
+                                  <div className="flex flex-col gap-1.5">
+                                    {opts.map((opt, i) => (
+                                      <div key={i} className="flex items-start gap-2 bg-gray-50 rounded-xl px-3 py-2.5">
+                                        <span className="text-emerald-500 font-bold text-sm mt-0.5">•</span>
+                                        <p className="text-sm text-gray-700">{opt}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-4 gap-2">
+                            {activeGroups.map(g => (
+                              <div key={g.key} className="bg-gray-50 rounded-xl p-2 text-center">
+                                <p className="text-xl">{g.icon}</p>
+                                <p className={`text-base font-extrabold ${g.color}`}>{item[g.key]}</p>
+                                <p className="text-xs text-gray-400">{g.label}</p>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
